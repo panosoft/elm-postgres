@@ -32,7 +32,7 @@ const QueryStream = require('pg-query-stream');
 // god I hate the pg library
 pg.on('error', err => err);
 
-var _user$project$Native_Postgres = function() {
+var _panosoft$elm_postgres$Native_Postgres = function() {
 	const createConnectionUrl = (host, port, database, user, password) => `postgres://${user}:${password}@${host}:${port}/${database}`;
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
