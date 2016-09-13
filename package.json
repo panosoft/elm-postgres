@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "See 'dependencies' for which node modules your app will need to install to use the Postgres Effects Manager for Elm",
   "author": "Charles Scalfani",
   "license": "Unlicense",
