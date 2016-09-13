@@ -1,8 +1,14 @@
-effect module Postgres.Postgres where { command = MyCmd, subscription = MySub } exposing (..)
+effect module Postgres where { command = MyCmd, subscription = MySub } exposing (connect, disconnect, query, moreQueryResults, executeSQL, listen)
 
 {-| Postgres Effects Manager to access Postgres DBs
 
-    The native driver is https://github.com/brianc/node-postgres.
+The native driver is https://github.com/brianc/node-postgres.
+
+# Commands
+@docs connect, disconnect, query, moreQueryResults, executeSQL
+
+# Subscriptions
+@docs listen
 -}
 
 import String exposing (..)
