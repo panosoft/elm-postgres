@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "description": "See 'dependencies' for which node modules your app will need to install to use the Postgres Effects Manager for Elm",
+  "author": "Charles Scalfani",
+  "license": "Unlicense",
+  "dependencies": {
+    "@panosoft/elm-native-helpers": "^0.1.6",
+    "pg": "^6.1.0"
+  }
+}
