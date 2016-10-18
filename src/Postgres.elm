@@ -1,4 +1,13 @@
-effect module Postgres where { command = MyCmd, subscription = MySub } exposing (connect, disconnect, query, moreQueryResults, executeSQL, listen)
+effect module Postgres
+    where { command = MyCmd, subscription = MySub }
+    exposing
+        ( connect
+        , disconnect
+        , query
+        , moreQueryResults
+        , executeSQL
+        , listen
+        )
 
 {-| Postgres Effects Manager to access Postgres DBs
 
@@ -18,68 +27,41 @@ import DebugF exposing (toStringF)
 import Native.Postgres
 
 
--- Native structures
+-- API
 
 
+type MyCmd msg
+    = Connect (ErrorTagger msg) (ConnectTagger msg) (ConnectionLostTagger msg) String Int String String String
+    | Disconnect (ErrorTagger msg) (DisconnectTagger msg) Int Bool
+    | Query (ErrorTagger msg) (QueryTagger msg) Int String Int
+    | MoreQueryResults (ErrorTagger msg) (QueryTagger msg) Int
+    | ExecuteSQL (ErrorTagger msg) (ExecuteTagger msg) Int String
+
+
+type MySub msg
+    = Listen (ErrorTagger msg) (ListenTagger msg) (ListenEventTagger msg) Int String
+
+
+
+-- Types
+
+
+{-| Native structure (opaque type)
+-}
 type Client
     = Client
 
 
+{-| Native structure (opaque type)
+-}
 type Stream
     = Stream
 
 
+{-| Native structure (opaque type)
+-}
 type NativeListener
     = NativeListener
-
-
-{-| Connection
--}
-type alias Connection msg =
-    { connectionLostTagger : ConnectionLostTagger msg
-    , connectionTagger : ConnectTagger msg
-    , errorTagger : ErrorTagger msg
-    , nativeListener : Maybe NativeListener
-    , disconnectionTagger : Maybe (ConnectTagger msg)
-    , queryTagger : Maybe (QueryTagger msg)
-    , executeTagger : Maybe (ExecuteTagger msg)
-    , listenTagger : Maybe (ListenTagger msg)
-    , eventTagger : Maybe (ListenEventTagger msg)
-    , client : Maybe Client
-    , stream : Maybe Stream
-    , recordCount : Maybe Int
-    , sql : Maybe String
-    }
-
-
-
--- Listener definitions
-
-
-type alias ListenerState msg =
-    { channel : String
-    , errorTagger : ErrorTagger msg
-    , listenTagger : ListenTagger msg
-    , eventTagger : ListenEventTagger msg
-    }
-
-
-type alias ListenerDict msg =
-    Dict Int (ListenerState msg)
-
-
-type alias NativeListenerDict =
-    Dict Int NativeListener
-
-
-{-| Effects manager state
--}
-type alias State msg =
-    { nextId : Int
-    , connections : Dict Int (Connection msg)
-    , listeners : ListenerDict msg
-    , nativeListeners : NativeListenerDict
-    }
 
 
 
@@ -111,18 +93,65 @@ type alias ExecuteTagger msg =
 
 
 
+-- State
+
+
+type alias Connection msg =
+    { connectionLostTagger : ConnectionLostTagger msg
+    , connectionTagger : ConnectTagger msg
+    , errorTagger : ErrorTagger msg
+    , nativeListener : Maybe NativeListener
+    , disconnectionTagger : Maybe (ConnectTagger msg)
+    , queryTagger : Maybe (QueryTagger msg)
+    , executeTagger : Maybe (ExecuteTagger msg)
+    , listenTagger : Maybe (ListenTagger msg)
+    , eventTagger : Maybe (ListenEventTagger msg)
+    , client : Maybe Client
+    , stream : Maybe Stream
+    , recordCount : Maybe Int
+    , sql : Maybe String
+    }
+
+
+type alias ListenerState msg =
+    { channel : String
+    , errorTagger : ErrorTagger msg
+    , listenTagger : ListenTagger msg
+    , eventTagger : ListenEventTagger msg
+    }
+
+
+type alias ListenerDict msg =
+    Dict Int (ListenerState msg)
+
+
+type alias NativeListenerDict =
+    Dict Int NativeListener
+
+
+{-| Effects manager state
+-}
+type alias State msg =
+    { nextId : Int
+    , connections : Dict Int (Connection msg)
+    , listeners : ListenerDict msg
+    , nativeListeners : NativeListenerDict
+    }
+
+
+
 -- helpers
 
 
-(//) : Maybe a -> a -> a
-(//) =
+(?=) : Maybe a -> a -> a
+(?=) =
     flip Maybe.withDefault
 
 
-{-| lazy version of // operator
+{-| lazy version of ?= operator
 -}
-(/!/) : Maybe a -> (() -> a) -> a
-(/!/) maybe lazy =
+(?!=) : Maybe a -> (() -> a) -> a
+(?!=) maybe lazy =
     case maybe of
         Just x ->
             x
@@ -150,31 +179,23 @@ init =
     Task.succeed (State 0 Dict.empty Dict.empty Dict.empty)
 
 
-type MyCmd msg
-    = Connect String Int String String String (ErrorTagger msg) (ConnectTagger msg) (ConnectionLostTagger msg)
-    | Disconnect Int Bool (ErrorTagger msg) (DisconnectTagger msg)
-    | Query Int String Int (ErrorTagger msg) (QueryTagger msg)
-    | MoreQueryResults Int (ErrorTagger msg) (QueryTagger msg)
-    | ExecuteSQL Int String (ErrorTagger msg) (ExecuteTagger msg)
-
-
 cmdMap : (a -> b) -> MyCmd a -> MyCmd b
 cmdMap f cmd =
     case cmd of
-        Connect host port' database user password errorTagger tagger connectionLostTagger ->
-            Connect host port' database user password (f << errorTagger) (f << tagger) (f << connectionLostTagger)
+        Connect errorTagger tagger connectionLostTagger host port' database user password ->
+            Connect (f << errorTagger) (f << tagger) (f << connectionLostTagger) host port' database user password
 
-        Disconnect client discardConnection errorTagger tagger ->
-            Disconnect client discardConnection (f << errorTagger) (f << tagger)
+        Disconnect errorTagger tagger client discardConnection ->
+            Disconnect (f << errorTagger) (f << tagger) client discardConnection
 
-        Query connectionId sql recordCount errorTagger tagger ->
-            Query connectionId sql recordCount (f << errorTagger) (f << tagger)
+        Query errorTagger tagger connectionId sql recordCount ->
+            Query (f << errorTagger) (f << tagger) connectionId sql recordCount
 
-        MoreQueryResults connectionId errorTagger tagger ->
-            MoreQueryResults connectionId (f << errorTagger) (f << tagger)
+        MoreQueryResults errorTagger tagger connectionId ->
+            MoreQueryResults (f << errorTagger) (f << tagger) connectionId
 
-        ExecuteSQL connectionId sql errorTagger tagger ->
-            ExecuteSQL connectionId sql (f << errorTagger) (f << tagger)
+        ExecuteSQL errorTagger tagger connectionId sql ->
+            ExecuteSQL (f << errorTagger) (f << tagger) connectionId sql
 
 
 
@@ -189,98 +210,98 @@ connectionTimeout =
 {-| Connect to a database
 
     Usage:
-        connect myHost 5432 myDb userName password ErrorConnect SuccessConnect ConnectionLost
+        connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password
 
     where:
         ErrorConnect, SuccessConnect and ConnectionLost are your application's messages to handle the different scenarios
 -}
-connect : String -> Int -> String -> String -> String -> ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> Cmd msg
-connect host port' database user password errorTagger tagger connectionLostTagger =
-    command (Connect host port' database user password errorTagger tagger connectionLostTagger)
+connect : ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> String -> Int -> String -> String -> String -> Cmd msg
+connect errorTagger tagger connectionLostTagger host port' database user password =
+    command (Connect errorTagger tagger connectionLostTagger host port' database user password)
 
 
 {-| Disconnect from database
 
     Usage:
-        disconnect 123 False ErrorDisconnect SuccessDisconnect
+        disconnect ErrorDisconnect SuccessDisconnect 123 False
 
     where:
+        ErrorDisconnect and SuccessDisconnect are your application's messages to handle the different scenarios
         123 is the connection id from the (ConnectTagger msg) handler
         False means to NOT discard the connection, i.e. return it into the pool
-        ErrorDisconnect and SuccessDisconnect are your application's messages to handle the different scenarios
 -}
-disconnect : Int -> Bool -> ErrorTagger msg -> DisconnectTagger msg -> Cmd msg
-disconnect connectionId discardConnection errorTagger tagger =
-    command (Disconnect connectionId discardConnection errorTagger tagger)
+disconnect : ErrorTagger msg -> DisconnectTagger msg -> Int -> Bool -> Cmd msg
+disconnect errorTagger tagger connectionId discardConnection =
+    command (Disconnect errorTagger tagger connectionId discardConnection)
 
 
 {-| Query the database
 
     Usage:
-        query 123 "SELECT * FROM table" 1000 ErrorQuery SuccessQuery
+        query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
 
     where:
+        ErrorQuery and SuccessQuery are your application's messages to handle the different scenarios
         123 is the connection id from the (ConnectTagger msg) handler
         "SELECT * FROM table" is the SQL Command that returns a SINGLE result set
         1000 is the number of records or rows to return in this call and subsequent Postgres.moreQueryResults calls
-        ErrorQuery and SuccessQuery are your application's messages to handle the different scenarios
 -}
-query : Int -> String -> Int -> ErrorTagger msg -> QueryTagger msg -> Cmd msg
-query connectionId sql recordCount errorTagger tagger =
-    command (Query connectionId sql recordCount errorTagger tagger)
+query : ErrorTagger msg -> QueryTagger msg -> Int -> String -> Int -> Cmd msg
+query errorTagger tagger connectionId sql recordCount =
+    command (Query errorTagger tagger connectionId sql recordCount)
 
 
 {-| Get more records from the database based on the last call to Postgres.query
 
     Usage:
-        moreQueryResults 123 ErrorQuery SuccessQuery
+        moreQueryResults ErrorQuery SuccessQuery 123
 
     where:
-        123 is the connection id from the (ConnectTagger msg) handler
         ErrorQuery and SuccessQuery are your application's messages to handle the different scenarios:
             when (snd SuccessQuery) == [] then there are no more records
+        123 is the connection id from the (ConnectTagger msg) handler
 -}
-moreQueryResults : Int -> ErrorTagger msg -> QueryTagger msg -> Cmd msg
-moreQueryResults connectionId errorTagger tagger =
-    command (MoreQueryResults connectionId errorTagger tagger)
+moreQueryResults : ErrorTagger msg -> QueryTagger msg -> Int -> Cmd msg
+moreQueryResults errorTagger tagger connectionId =
+    command (MoreQueryResults errorTagger tagger connectionId)
 
 
 {-| Execute SQL command, e.g. INSERT, UPDATE, DELETE, etc.
 
     Usage:
-        executeSQL 123 "DELETE FROM table" ErrorExecuteSQL SuccessExecuteSQL
+        executeSQL ErrorExecuteSQL SuccessExecuteSQL 123 "DELETE FROM table"
 
     where:
+        ErrorExecuteSQL and SuccessExecuteSQL are your application's messages to handle the different scenarios
         123 is the connection id from the (ConnectTagger msg) handler
         "DELETE FROM table" is the SQL Command that returns a ROW COUNT
-        ErrorExecuteSQL and SuccessExecuteSQL are your application's messages to handle the different scenarios
 -}
-executeSQL : Int -> String -> ErrorTagger msg -> ExecuteTagger msg -> Cmd msg
-executeSQL connectionId sql errorTagger tagger =
-    command (ExecuteSQL connectionId sql errorTagger tagger)
+executeSQL : ErrorTagger msg -> ExecuteTagger msg -> Int -> String -> Cmd msg
+executeSQL errorTagger tagger connectionId sql =
+    command (ExecuteSQL errorTagger tagger connectionId sql)
 
 
 
 -- subscription taggers
 
 
+{-| (connectionId, channel, type) where type = "listen" or "unlisten"
+-}
 type alias ListenTagger msg =
     ( Int, String, String ) -> msg
 
 
+{-| (connectionId, channel, message)
+-}
 type alias ListenEventTagger msg =
     ( Int, String, String ) -> msg
-
-
-type MySub msg
-    = Listen Int String (ErrorTagger msg) (ListenTagger msg) (ListenEventTagger msg)
 
 
 subMap : (a -> b) -> MySub a -> MySub b
 subMap f sub =
     case sub of
-        Listen connectionId channel errorTagger listenTagger eventTagger ->
-            Listen connectionId channel (f << errorTagger) (f << listenTagger) (f << eventTagger)
+        Listen errorTagger listenTagger eventTagger connectionId channel ->
+            Listen (f << errorTagger) (f << listenTagger) (f << eventTagger) connectionId channel
 
 
 
@@ -290,17 +311,17 @@ subMap f sub =
 {-| Subscribe to Postgres NOTIFY messages (see https://www.postgresql.org/docs/current/static/sql-notify.html)
 
     Usage:
-        listen 123 "myChannel" ErrorListenUnlisten SuccessListenUnlisten
+        listen ErrorListenUnlisten SuccessListenUnlisten 123 "myChannel"
 
     where:
-        123 is the connection id from the (ConnectTagger msg) handler
-        "myChannel" is the name of the Channel that will publish a STRING payload
         ErrorListenUnlisten and SuccessListenUnlisten are your application's messages to handle the different scenarios
             Messages are sent to the application upon subscribe and unsubscribe (Listen and Unlisten)
+        123 is the connection id from the (ConnectTagger msg) handler
+        "myChannel" is the name of the Channel that will publish a STRING payload
 -}
-listen : Int -> String -> ErrorTagger msg -> ListenTagger msg -> ListenEventTagger msg -> Sub msg
-listen connectionId channel errorTagger listenTagger eventTagger =
-    subscription (Listen connectionId channel errorTagger listenTagger eventTagger)
+listen : ErrorTagger msg -> ListenTagger msg -> ListenEventTagger msg -> Int -> String -> Sub msg
+listen errorTagger listenTagger eventTagger connectionId channel =
+    subscription (Listen errorTagger listenTagger eventTagger connectionId channel)
 
 
 
@@ -387,7 +408,7 @@ startStopListeners listenUnlisten router listeners state =
                                 (Dict.get connectionId state.connections)
                     in
                         maybeTask
-                            // ( invalidConnectionId router listenerState.errorTagger connectionId, state )
+                            ?= ( invalidConnectionId router listenerState.errorTagger connectionId, state )
             in
                 ( executeTask &> task, executeState )
     in
@@ -407,7 +428,7 @@ startListeners =
 addMySub : MySub msg -> ListenerDict msg -> ListenerDict msg
 addMySub sub dict =
     case sub of
-        Listen connectionId channel errorTagger listenTagger eventTagger ->
+        Listen errorTagger listenTagger eventTagger connectionId channel ->
             Dict.insert connectionId (ListenerState channel errorTagger listenTagger eventTagger) dict
 
 
@@ -445,7 +466,7 @@ invalidConnectionId router errorTagger connectionId =
 handleCmd : Platform.Router msg Msg -> State msg -> MyCmd msg -> ( Task Never (), State msg )
 handleCmd router state cmd =
     case cmd of
-        Connect host port' database user password errorTagger tagger connectionLostTagger ->
+        Connect errorTagger tagger connectionLostTagger host port' database user password ->
             let
                 connectionId =
                     state.nextId
@@ -460,7 +481,7 @@ handleCmd router state cmd =
                 , { state | nextId = state.nextId + 1, connections = Dict.insert connectionId newConnection state.connections }
                 )
 
-        Disconnect connectionId discardConnection errorTagger tagger ->
+        Disconnect errorTagger tagger connectionId discardConnection ->
             Maybe.map
                 (\connection ->
                     ( Native.Postgres.disconnect (settings0 router (ErrorDisconnect connectionId) (SuccessDisconnect connectionId)) connection.client discardConnection connection.nativeListener
@@ -468,9 +489,9 @@ handleCmd router state cmd =
                     )
                 )
                 (Dict.get connectionId state.connections)
-                // ( invalidConnectionId router errorTagger connectionId, state )
+                ?= ( invalidConnectionId router errorTagger connectionId, state )
 
-        Query connectionId sql recordCount errorTagger tagger ->
+        Query errorTagger tagger connectionId sql recordCount ->
             Maybe.map
                 (\connection ->
                     ( Native.Postgres.query (settings2 router (ErrorQuery connectionId sql) (SuccessQuery connectionId)) connection.client sql recordCount connection.nativeListener
@@ -478,9 +499,9 @@ handleCmd router state cmd =
                     )
                 )
                 (Dict.get connectionId state.connections)
-                // ( invalidConnectionId router errorTagger connectionId, state )
+                ?= ( invalidConnectionId router errorTagger connectionId, state )
 
-        MoreQueryResults connectionId errorTagger tagger ->
+        MoreQueryResults errorTagger tagger connectionId ->
             Maybe.map
                 (\connection ->
                     Maybe.map3
@@ -492,12 +513,12 @@ handleCmd router state cmd =
                         connection.sql
                         connection.recordCount
                         connection.stream
-                        /!/ (\_ -> ( crashTask () <| "Invalid connection state: " ++ (toStringF <| printableConnection connection), state ))
+                        ?!= (\_ -> ( crashTask () <| "Invalid connection state: " ++ (toStringF <| printableConnection connection), state ))
                 )
                 (Dict.get connectionId state.connections)
-                // ( invalidConnectionId router errorTagger connectionId, state )
+                ?= ( invalidConnectionId router errorTagger connectionId, state )
 
-        ExecuteSQL connectionId sql errorTagger tagger ->
+        ExecuteSQL errorTagger tagger connectionId sql ->
             Maybe.map
                 (\connection ->
                     ( Native.Postgres.executeSQL (settings1 router (ErrorExecuteSQL connectionId sql) (SuccessExecuteSQL connectionId)) connection.client sql
@@ -505,7 +526,7 @@ handleCmd router state cmd =
                     )
                 )
                 (Dict.get connectionId state.connections)
-                // ( invalidConnectionId router errorTagger connectionId, state )
+                ?= ( invalidConnectionId router errorTagger connectionId, state )
 
 
 type Msg

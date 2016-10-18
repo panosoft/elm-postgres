@@ -27,90 +27,90 @@ This must be done before any other commands are run. The connection may come fro
 Connections are maintained by the Effect Manager State and are referenced via `connectionId`s.
 
 ```elm
-connect : String -> Int -> String -> String -> String -> ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> Cmd msg
-connect host port' database user password errorTagger tagger connectionLostTagger
+connect : ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> String -> Int -> String -> String -> String -> Cmd msg
+connect errorTagger tagger connectionLostTagger host port' database user password
 ```
 __Usage__
 
 ```elm
-connect myHost 5432 myDb userName password ErrorConnect SuccessConnect ConnectionLost
+connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password
 ```
+* `ErrorConnect`, `SuccessConnect` and `ConnectionLost` are your application's messages to handle the different scenarios.
 * `myHost` is the host name of the Postgres server
 * `5432` is the port to communicate to the Postgres server
 * `myDb` is the name of the database to connect
 * `userName` and `password` are the logon credentials for Postgres server (these are required and cannot be blank)
-* `ErrorConnect`, `SuccessConnect` and `ConnectionLost` are your application's messages to handle the different scenarios.
 
 > Disconnect from database
 
 When a connection is no longer needed, it can be disconnected. It will be placed back into the pool unless `discardConnection` is `True`.
 
 ```elm
-disconnect : Int -> Bool -> ErrorTagger msg -> DisconnectTagger msg -> Cmd msg
-disconnect connectionId discardConnection errorTagger tagger
+disconnect : ErrorTagger msg -> DisconnectTagger msg -> Int -> Bool -> Cmd msg
+disconnect errorTagger tagger connectionId discardConnection
 ```
 __Usage__
 
 ```elm
-disconnect 123 False ErrorDisconnect SuccessDisconnect
+disconnect ErrorDisconnect SuccessDisconnect 123 False
 ```
 
+* `ErrorDisconnect` and `SuccessDisconnect` are your application's messages to handle the different scenarios
 * `123` is the connection id from the `(ConnectTagger msg)` handler
 * `False` means do NOT discard the connection, i.e. return it into the pool
-* `ErrorDisconnect` and `SuccessDisconnect` are your application's messages to handle the different scenarios
 
 > Query the database
 
 This runs any SQL command that returns a SINGLE result set, usually a `SELECT` statement. The result set is a List of JSON-formatted Strings where each object has keys that match the column names.
 
 ```elm
-query : Int -> String -> Int -> ErrorTagger msg -> QueryTagger msg -> Cmd msg
-query connectionId sql recordCount errorTagger tagger
+query : ErrorTagger msg -> QueryTagger msg -> Int -> String -> Int -> Cmd msg
+query errorTagger tagger connectionId sql recordCount
 ```
 __Usage__
 
 ```elm
-query 123 "SELECT * FROM table" 1000 ErrorQuery SuccessQuery
+query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
 ```
+* `ErrorQuery` and `SuccessQuery` are your application's messages to handle the different scenarios
 * `123` is the connection id from the `(ConnectTagger msg)` handler
 * `"SELECT * FROM table"` is the SQL Command that returns a SINGLE result set
 * `1000` is the maximum number of records or rows to return in this call and subsequent `Postgres.moreQueryResults` calls
 	* If the number of records returned is less than this amount then there are no more records
-* `ErrorQuery` and `SuccessQuery` are your application's messages to handle the different scenarios
 
 > Get more records from the database
 
 This continues retrieving records from the last `Postgres.query` call. It will retrieve at most the number of records originally specified by the `recordCount` parameter of that call.
 
 ```elm
-moreQueryResults : Int -> ErrorTagger msg -> QueryTagger msg -> Cmd msg
-moreQueryResults connectionId errorTagger tagger
+moreQueryResults : ErrorTagger msg -> QueryTagger msg -> Int -> Cmd msg
+moreQueryResults errorTagger tagger connectionId
 ```
 __Usage__
 
 ```elm
-moreQueryResults 123 ErrorQuery SuccessQuery
+moreQueryResults ErrorQuery SuccessQuery 123
 ```
-* `123` is the connection id from the `(ConnectTagger msg)` handler
 * `ErrorQuery` and `SuccessQuery` are your application's messages to handle the different scenarios:
 	* When `(snd SuccessQuery) == []` then there are no more records
+* `123` is the connection id from the `(ConnectTagger msg)` handler
 
 > Execute SQL command
 
 This will execute a SQL command that returns a COUNT, e.g. INSERT, UPDATE, DELETE, etc.
 
 ```elm
-executeSQL : Int -> String -> ErrorTagger msg -> ExecuteTagger msg -> Cmd msg
-executeSQL connectionId sql errorTagger tagger
+executeSQL : ErrorTagger msg -> ExecuteTagger msg -> Int -> String -> Cmd msg
+executeSQL errorTagger tagger connectionId sql
 ```
 __Usage__
 
 ```elm
-executeSQL 123 "DELETE FROM table" ErrorExecuteSQL SuccessExecuteSQL
+executeSQL ErrorExecuteSQL SuccessExecuteSQL 123 "DELETE FROM table"
 ```
+* `ErrorExecuteSQL` and `SuccessExecuteSQL` are your application's messages to handle the different scenarios
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"DELETE FROM table"` is the SQL Command that returns a ROW COUNT
-* `ErrorExecuteSQL` and `SuccessExecuteSQL` are your application's messages to handle the different scenarios
 
 
 ### Subscriptions
@@ -122,18 +122,18 @@ Subscribe to a Postgres PubSub Channel.
 For more about Postgres notification, see [NOTIFY](https://www.postgresql.org/docs/current/static/sql-notify.html) and [LISTEN](https://www.postgresql.org/docs/current/static/sql-listen.html).
 
 ```elm
-listen : Int -> String -> ErrorTagger msg -> ListenTagger msg -> ListenEventTagger msg -> Sub msg
-listen connectionId channel errorTagger listenTagger eventTagger
+listen : ErrorTagger msg -> ListenTagger msg -> ListenEventTagger msg -> Int -> String -> Sub msg
+listen errorTagger listenTagger eventTagger connectionId channel
 ```
 __Usage__
 
 ```elm
-listen 123 "myChannel" ErrorListenUnlisten SuccessListenUnlisten
+listen ErrorListenUnlisten SuccessListenUnlisten 123 "myChannel"
 ```
-* `123` is the connection id from the (ConnectTagger msg) handler
-* `"myChannel"` is the name of the Channel that will publish a STRING payload
 * `ErrorListenUnlisten` and `SuccessListenUnlisten` are your application's messages to handle the different scenarios
 	* Messages are sent to the application upon subscribe and unsubscribe (Listen and Unlisten)
+* `123` is the connection id from the (ConnectTagger msg) handler
+* `"myChannel"` is the name of the Channel that will publish a STRING payload
 
 ### Messages
 
