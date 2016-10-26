@@ -4,7 +4,7 @@
   "author": "Charles Scalfani",
   "license": "Unlicense",
   "dependencies": {
-    "@panosoft/elm-native-helpers": "^0.1.6",
+    "@panosoft/elm-native-helpers": "^0.1.9",
     "pg": "^6.1.0",
     "pg-query-stream": "^1.0.0",
     "stream-read": "^1.1.2"

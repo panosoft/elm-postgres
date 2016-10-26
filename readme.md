@@ -46,7 +46,7 @@ connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName pas
 When a connection is no longer needed, it can be disconnected. It will be placed back into the pool unless `discardConnection` is `True`.
 
 ```elm
-disconnect : ErrorTagger msg -> DisconnectTagger msg -> Int -> Bool -> Cmd msg
+disconnect : ErrorTagger msg -> DisconnectTagger msg -> ConnectionId -> Bool -> Cmd msg
 disconnect errorTagger tagger connectionId discardConnection
 ```
 __Usage__
@@ -64,7 +64,7 @@ disconnect ErrorDisconnect SuccessDisconnect 123 False
 This runs any SQL command that returns a SINGLE result set, usually a `SELECT` statement. The result set is a List of JSON-formatted Strings where each object has keys that match the column names.
 
 ```elm
-query : ErrorTagger msg -> QueryTagger msg -> Int -> String -> Int -> Cmd msg
+query : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Sql -> Int -> Cmd msg
 query errorTagger tagger connectionId sql recordCount
 ```
 __Usage__
@@ -83,7 +83,7 @@ query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
 This continues retrieving records from the last `Postgres.query` call. It will retrieve at most the number of records originally specified by the `recordCount` parameter of that call.
 
 ```elm
-moreQueryResults : ErrorTagger msg -> QueryTagger msg -> Int -> Cmd msg
+moreQueryResults : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Cmd msg
 moreQueryResults errorTagger tagger connectionId
 ```
 __Usage__
@@ -100,15 +100,15 @@ moreQueryResults ErrorQuery SuccessQuery 123
 This will execute a SQL command that returns a COUNT, e.g. INSERT, UPDATE, DELETE, etc.
 
 ```elm
-executeSQL : ErrorTagger msg -> ExecuteTagger msg -> Int -> String -> Cmd msg
-executeSQL errorTagger tagger connectionId sql
+executeSql : ErrorTagger msg -> ExecuteTagger msg -> ConnectionId -> Sql -> Cmd msg
+executeSql errorTagger tagger connectionId sql
 ```
 __Usage__
 
 ```elm
-executeSQL ErrorExecuteSQL SuccessExecuteSQL 123 "DELETE FROM table"
+executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
 ```
-* `ErrorExecuteSQL` and `SuccessExecuteSQL` are your application's messages to handle the different scenarios
+* `ErrorExecuteSql` and `SuccessExecuteSql` are your application's messages to handle the different scenarios
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"DELETE FROM table"` is the SQL Command that returns a ROW COUNT
 
@@ -143,7 +143,7 @@ All error messages are of this type.
 
 ```elm
 type alias ErrorTagger msg =
-    ( Int, String ) -> msg
+	( ConnectionId, String ) -> msg
 ```
 
 __Usage__
@@ -163,7 +163,7 @@ Successful connection.
 
 ```elm
 type alias ConnectTagger msg =
-    Int -> msg
+	ConnectionId -> msg
 ```
 
 __Usage__
@@ -183,7 +183,7 @@ Connection has been lost.
 
 ```elm
 type alias ConnectionLostTagger msg =
-    ( Int, String ) -> msg
+	( ConnectionId, String ) -> msg
 ```
 
 __Usage__
@@ -203,7 +203,7 @@ Successful disconnect.
 
 ```elm
 type alias DisconnectTagger msg =
-    Int -> msg
+	ConnectionId -> msg
 ```
 
 __Usage__
@@ -223,7 +223,7 @@ Successful Query and the first `recordCount` records.
 
 ```elm
 type alias QueryTagger msg =
-    ( Int, List String ) -> msg
+	( ConnectionId, List String ) -> msg
 ```
 
 __Usage__
@@ -243,7 +243,7 @@ Successful SQL command execution.
 
 ```elm
 type alias ExecuteTagger msg =
-    ( Int, Int ) -> msg
+	( ConnectionId, Int ) -> msg
 ```
 
 __Usage__
@@ -263,7 +263,7 @@ Successful listen or unlisten.
 
 ```elm
 type alias ListenTagger msg =
-    ( Int, String, String ) -> msg
+	( ConnectionId, ListenChannel, ListenUnlisten ) -> msg
 ```
 
 __Usage__
@@ -273,10 +273,10 @@ ListenUnlisten ( connectionId, channel, type' ) ->
 	let
 		l =
 			case type' of
-				"listen" ->
+				ListenType ->
 					Debug.log "Listen" ( connectionId, channel )
 
-				"unlisten" ->
+				UnlistenType ->
 					Debug.log "Unlisten" ( connectionId, channel )
 	in
 		model ! []
