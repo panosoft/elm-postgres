@@ -128,9 +128,9 @@ listen errorTagger listenTagger eventTagger connectionId channel
 __Usage__
 
 ```elm
-listen ErrorListenUnlisten SuccessListenUnlisten 123 "myChannel"
+listen ErrorListenUnlisten SuccessListenUnlisten ListenEvent 123 "myChannel"
 ```
-* `ErrorListenUnlisten` and `SuccessListenUnlisten` are your application's messages to handle the different scenarios
+* `ErrorListenUnlisten`,  `SuccessListenUnlisten` and `ListenEvent` are your application's messages to handle the different scenarios
 	* Messages are sent to the application upon subscribe and unsubscribe (Listen and Unlisten)
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"myChannel"` is the name of the Channel that will publish a STRING payload
