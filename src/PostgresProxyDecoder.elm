@@ -48,6 +48,16 @@ type alias ExecuteSqlRequest =
     }
 
 
+type alias ListenRequest =
+    { channel : String
+    }
+
+
+type alias UnlistenRequest =
+    { channel : String
+    }
+
+
 {-| Proxy requests
 -}
 type ProxyRequest
@@ -56,6 +66,8 @@ type ProxyRequest
     | Query QueryRequest
     | MoreQueryResults MoreQueryResultsRequest
     | ExecuteSql ExecuteSqlRequest
+    | Listen ListenRequest
+    | Unlisten UnlistenRequest
     | Unknown String
 
 
@@ -122,6 +134,22 @@ executeSqlDecoder =
             )
 
 
+listenDecoder : JD.Decoder ProxyRequest
+listenDecoder =
+    JD.succeed Listen
+        <|| (JD.succeed ListenRequest
+                <|| ("channel" := string)
+            )
+
+
+unlistenDecoder : JD.Decoder ProxyRequest
+unlistenDecoder =
+    JD.succeed Unlisten
+        <|| (JD.succeed UnlistenRequest
+                <|| ("channel" := string)
+            )
+
+
 {-| Decode JSON Postgres Proxy Request
 -}
 decodeRequest : String -> Result String ProxyRequest
@@ -146,6 +174,12 @@ decodeRequest json =
 
                 "executeSql" ->
                     executeSqlDecoder
+
+                "listen" ->
+                    listenDecoder
+
+                "unlisten" ->
+                    unlistenDecoder
 
                 _ ->
                     JD.succeed <| Unknown ("Unknown request:" ++ func ++ " in: " ++ json)

@@ -152,8 +152,8 @@ if (!process.env.BROWSER) {
 		};
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Subs
-		const _listen = (dbClient, sql, routeCb, cb) => {
-			_executeSql(dbClient, sql, (err, _) => {
+		const _listen = (dbClient, channel, routeCb, cb) => {
+			_executeSql(dbClient, "LISTEN " + channel, (err, _) => {
 				const nativeListener = message => {
 					E.Scheduler.rawSpawn(routeCb(message.payload));
 				};
@@ -161,8 +161,8 @@ if (!process.env.BROWSER) {
 				cb(null, nativeListener);
 			});
 		};
-		const _unlisten = (dbClient, sql, nativeListener, cb) => {
-			_executeSql(dbClient, sql, (err, _) => {
+		const _unlisten = (dbClient, channel, nativeListener, cb) => {
+			_executeSql(dbClient, "UNLISTEN " + channel, (err, _) => {
 				dbClient.client.removeListener('notification', nativeListener);
 				cb();
 			});
@@ -212,34 +212,48 @@ else {
 		var _badResponseMsg;
 		var _wsUrl;
 		var _additionalSendData;
-		const _send = (ws, handler, message) => {
+		const _send = (ws, type, handler, message) => {
 			// set message handler
-			ws.__messageHandler__ = handler;
+			ws.__messageHandlers__[type] = handler;
 			// add addtional keys
 			message = merge(message, _additionalSendData);
 			ws.send(JSON.stringify(message));
 		};
-		const idleMessageHandler = ws => event => handleResponse(ws, event.data, _ => _);
-		const handleResponse = (ws, event, errorCb, successCb) => {
-			// reset message handler
-			ws.__messageHandler__ = idleMessageHandler(ws);
-			// check for proxy losing connection to DB
+		const sendBadResponseToApp = (responseOrEventData, error) => {
+			const response = typeof responseOrEventData == 'string' ? responseOrEventData : JSON.stringify(responseOrEventData);
+			E.Scheduler.rawSpawn(A2(E.sendToApp, _router, _badResponseMsg(E.Tuple.tuple2(response, error))));
+		};
+		const isUnsolicitedMessage = response => response.unsolicited;
+		const unsolicitedMessageHandler = ws => response => {
 			try {
-				const response = JSON.parse(event.data);
-				if (!response.success && response.connectionLostError) {
-					ws.__connectionLostCb__(response.connectionLostError);
+				// check for proxy losing connection to DB
+				if (response.connectionLostError) {
+					E.Scheduler.rawSpawn(ws.__connectionLostCb__(response.connectionLostError));
 					ws.__connectionLostAlreadySent__ = true;
 					ws.close();
 				}
-				else if (response.error)
-					errorCb(response.error);
-				// do SUCCESS handling
+				// check for notification
+				else if (response.notification) {
+					if (ws.__notificationListener__)
+						ws.__notificationListener__(response.notification);
+					else
+						unexpectedResponse(response);
+				}
+				// unknown unsolicited
 				else
-					successCb(response);
+					throw Error('Unknown unsolicited message: ' + JSON.stringify(response));
 			}
 			catch (err) {
-				// send bad response message to app
-				E.Scheduler.rawSpawn(A2(E.sendToApp, _router, _badResponseMsg(E.Tuple.tuple2(event.data, err.message))));
+				sendBadResponseToApp(response, rr.stack);
+			}
+		};
+		const unexpectedResponse = response => sendBadResponseToApp(response, 'Unexpected Response from Proxy');
+		const handleResponse = (response, errorCb, successCb) => {
+			try {
+				response.error ? errorCb(response.error) : successCb(response);
+			}
+			catch (err) {
+				sendBadResponseToApp(response, err.stack);
 			}
 		};
 		const wsCloseReason = event => {
@@ -283,15 +297,41 @@ else {
 				const ws = new WebSocket(_wsUrl);
 				ws.__open__ = false;
 				ws.__connectionLostCb__ = connectionLostCb;
+				// init message handlers
+				ws.__messageHandlers__ = {};
 	            ws.addEventListener('open', _ => {
 					ws.__open__ = true;
 					// send to proxy
-					_send(ws, event => handleResponse(ws, event, cb, response => cb(null, ws, null)), {
-						func: 'connect',
+					const func = 'connect';
+					_send(ws, func, response => handleResponse(response, cb, response => cb(null, ws, null)), {
+						func,
 						host, port, database, user, password
 					});
 				});
-	            ws.addEventListener('message', event => ws.__messageHandler__(event));
+	            ws.addEventListener('message', event => {
+					try {
+						// get response
+						const response = JSON.parse(event.data);
+						// check for unsolicited message
+						if (isUnsolicitedMessage(response))
+							unsolicitedMessageHandler(ws)(response);
+						else {
+							// get type
+							const type = response.type;
+							// get handler
+							const handler = ws.__messageHandlers__[type] || (_ => sendBadResponseToApp(response, 'Unknown response type from proxy: ' + type + ' Response: ' + event.data));
+							// call handler
+							handler(response);
+							// reset message handler
+							ws.__messageHandlers__[type] = unexpectedResponse;
+
+						}
+					}
+					catch (err) {
+						sendBadResponseToApp(event.data, err.stack);
+					}
+
+				});
 				ws.__closeHandler__ = event => {
 					if (ws.__open__) {
 						if (!ws.__connectionLostAlreadySent__)
@@ -312,12 +352,13 @@ else {
 			try {
 				const ws = dbClient;
 				// send to proxy
-				_send(ws, event => handleResponse(ws, event, cb, response => {
+				const func = 'disconnect';
+				_send(ws, func, response => handleResponse(response, cb, response => {
 					ws.removeEventListener('close', ws.__closeHandler__);
 					ws.close();
 					cb();
 				}), {
-					func: 'disconnect',
+					func,
 					discardConnection
 				});
 			}
@@ -329,10 +370,11 @@ else {
 			try {
 				const ws = dbClient;
 				// send to proxy
-				_send(ws, event => handleResponse(ws, event, cb, response => {
+				const func = 'query';
+				_send(ws, func, response => handleResponse(response, cb, response => {
 					cb(null, null, E.List.fromArray(response.records));
 				}), {
-					func: 'query',
+					func,
 					sql, recordCount
 				});
 			}
@@ -344,10 +386,11 @@ else {
 			try {
 				const ws = dbClient;
 				// send to proxy
-				_send(ws, event => handleResponse(ws, event, cb, response => {
+				const func = 'moreQueryResults';
+				_send(ws, func, response => handleResponse(response, cb, response => {
 					cb(null, null, E.List.fromArray(response.records));
 				}), {
-					func: 'moreQueryResults'
+					func
 				});
 			}
 			catch (err) {
@@ -358,10 +401,11 @@ else {
 			try {
 				const ws = dbClient;
 				// send to proxy
-				_send(ws, event => handleResponse(ws, event, cb, response => {
+				const func = 'executeSql';
+				_send(ws, func, response => handleResponse(response, cb, response => {
 					cb(null, response.count);
 				}), {
-					func: 'executeSql',
+					func,
 					sql
 				});
 			}
@@ -383,9 +427,41 @@ else {
 		};
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Subs
-		const _listen = (dbClient, sql, routeCb, cb) => {
+		const _listen = (dbClient, channel, routeCb, cb) => {
+			try {
+				const ws = dbClient;
+				// send to proxy
+				const func = 'listen';
+				_send(ws, func, response => handleResponse(response, cb, response => {
+					ws.__notificationListener__ = message => {
+						E.Scheduler.rawSpawn(routeCb(message));
+					};
+					cb(null, null);
+				}), {
+					func,
+					channel
+				});
+			}
+			catch (err) {
+	            cb(err.message)
+	        }
 		};
-		const _unlisten = (dbClient, sql, nativeListener, cb) => {
+		const _unlisten = (dbClient, channel, nativeListener, cb) => {
+			try {
+				const ws = dbClient;
+				// send to proxy
+				const func = 'unlisten';
+				_send(ws, func, response => handleResponse(response, cb, response => {
+					delete ws.__notificationListener__;
+					cb(null, null);
+				}), {
+					func,
+					channel
+				});
+			}
+			catch (err) {
+				cb(err.message)
+			}
 		};
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Cmds
@@ -398,7 +474,7 @@ else {
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		// Subs
 		const listen = helper.call3_1(_listen, helper.unwrap({1:'_0'}));
-		const unlisten = helper.call3_0(_unlisten, helper.unwrap({1:'_0'}));
+		const unlisten = helper.call3_1(_unlisten, helper.unwrap({1:'_0'}));
 
 		return {
 			///////////////////////////////////////////
