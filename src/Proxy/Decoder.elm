@@ -1,4 +1,4 @@
-module PostgresProxyDecoder
+module Proxy.Decoder
     exposing
         ( decodeRequest
         , ProxyRequest(..)
@@ -68,7 +68,7 @@ type ProxyRequest
     | ExecuteSql ExecuteSqlRequest
     | Listen ListenRequest
     | Unlisten UnlistenRequest
-    | Unknown String
+    | UnknownProxyRequest String
 
 
 (///) : Result err value -> (err -> value) -> value
@@ -152,7 +152,7 @@ unlistenDecoder =
 
 {-| Decode JSON Postgres Proxy Request
 -}
-decodeRequest : String -> Result String ProxyRequest
+decodeRequest : String -> ( String, Result String ProxyRequest )
 decodeRequest json =
     let
         func =
@@ -182,6 +182,6 @@ decodeRequest json =
                     unlistenDecoder
 
                 _ ->
-                    JD.succeed <| Unknown ("Unknown request:" ++ func ++ " in: " ++ json)
+                    JD.succeed <| UnknownProxyRequest ("Unknown proxy request:" ++ func ++ " in: " ++ json)
     in
-        JD.decodeString decoder json
+        ( func, JD.decodeString decoder json )
