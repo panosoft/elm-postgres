@@ -595,7 +595,7 @@ handleCmd router state cmd =
                     Maybe.map3
                         (\sql recordCount stream ->
                             ( Native.Postgres.moreQueryResults (settings2 router (ErrorQuery connectionId sql) (SuccessQuery connectionId)) connection.client stream recordCount
-                            , state
+                            , updateConnection state connectionId { connection | queryTagger = Just tagger, errorTagger = errorTagger }
                             )
                         )
                         connection.sql
