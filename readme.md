@@ -269,15 +269,35 @@ type alias ListenTagger msg =
 __Usage__
 
 ```elm
-ListenUnlisten ( connectionId, channel, type' ) ->
+ListenUnlisten ( connectionId, channel, type_ ) ->
 	let
 		l =
-			case type' of
+			case type_ of
 				ListenType ->
 					Debug.log "Listen" ( connectionId, channel )
 
 				UnlistenType ->
 					Debug.log "Unlisten" ( connectionId, channel )
+	in
+		model ! []
+```
+
+#### ListenEventTagger
+
+Listen event.
+
+```elm
+type alias ListenEventTagger msg =
+    ( ConnectionId, ListenChannel, String ) -> msg
+```
+
+__Usage__
+
+```elm
+ListenEvent ( connectionId, channel, message ) ->
+	let
+		l =
+			Debug.log "ListenEvent" ( connectionId, channel, message )
 	in
 		model ! []
 ```
