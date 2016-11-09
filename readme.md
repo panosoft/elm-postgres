@@ -2,6 +2,14 @@
 
 > Effects Manager for Node-based Elm programs to be able to access Postgres SQL databases.
 
+> This Effects Manager also works on the client side since the native code is environment aware. The native client code will delegate to an Authenticating Proxy Server which is also written in Elm and use this Effects Manager with the server native code.
+
+> It is called [PGProxy](https://github.com/panosoft/elm-pgproxy).
+
+> The module Proxy.Decoder has the JSON Decoders for handling the messages sent by the native client code. This module is used in PGProxy.
+
+> It is possible to write your own PGProxy, but I'd suggest you first look to PGProxy as a reference implementation. Hopefully, it will fit your needs.
+
 This Effects Manager is built on top of the canonical PG library for node, [node-postgres](https://github.com/brianc/node-postgres).
 
 ## Install
@@ -301,11 +309,6 @@ ListenEvent ( connectionId, channel, message ) ->
 	in
 		model ! []
 ```
-
-## To Do
-
-* Support this Effect Manager on the client side by making the native code environment aware. The native client code will delegate to an Authenticating Proxy Server which will be written in Elm and use this Effects Manager (at least that's the current plan).
-
 
 ## Warning
 
