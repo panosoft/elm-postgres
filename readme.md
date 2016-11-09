@@ -120,6 +120,32 @@ executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"DELETE FROM table"` is the SQL Command that returns a ROW COUNT
 
+> Client side configuration
+
+This is an extra step when using this Effects Manager on the client. It must be the FIRST call so that the native client
+code will delegate properly to a proxy server, e.g. [elm-pgproxy](https://github.com/panosoft/elm-pgproxy).
+
+The first time this is called, `url` MUST be provided. Subsequent calls can pass Nothing and the previous URL will be used.
+
+This is useful when making changes ONLY to the JSON object when the authentication credentials change and the proxy server authenticates.
+
+```elm
+clientSideConfig : ConfigErrorTagger msg -> ConfigTagger msg -> BadResponseTagger msg -> Maybe WSUrl -> Maybe JsonString -> Cmd msg
+clientSideConfig errorTagger tagger badResponseTagger url json
+
+```
+__Usage__
+
+```elm
+clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+* `ConfigError`, `Configured` and `BadResponse` are your application's messages to handle the different scenarios
+* `ws:/pg-proxy-server` is the URL to the Websocket for the PG Proxy (all new connections will use this URL)
+* `{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}` is the JSON string of an object to be merged with all requests
+
+Here, in this example, the JSON string to merge is used by the Proxy Server to authenticate the request. The protocol with the proxy doesn't require this. It's implemenation specific.
+
+[PGProxy](https://github.com/panosoft/elm-pgproxy) delegates authentication to the application allowing for flexible authentication.
 
 ### Subscriptions
 
