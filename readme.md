@@ -147,6 +147,8 @@ Here, in this example, the JSON string to merge is used by the Proxy Server to a
 
 [PGProxy](https://github.com/panosoft/elm-pgproxy) delegates authentication to the application allowing for flexible authentication.
 
+N.B. connecting to the Database should NOT be done until the `Configured` message has been received. That's because the trasport between the client and the proxy is Websockets.
+
 ### Subscriptions
 
 > Subscribe to Postgres NOTIFY messages
@@ -334,6 +336,25 @@ ListenEvent ( connectionId, channel, message ) ->
 			Debug.log "ListenEvent" ( connectionId, channel, message )
 	in
 		model ! []
+```
+#### ConfigTagger
+
+Configured event.
+
+```elm
+type alias ConfigTagger msg =
+    () -> msg
+```
+
+__Usage__
+
+```elm
+Configured () ->
+	let
+		l =
+			Debug.log "Configured" ""
+	in
+		model ! [ Postgres.connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password ]
 ```
 
 ## Warning
