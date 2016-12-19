@@ -265,10 +265,10 @@ type alias QueryTagger msg =
 __Usage__
 
 ```elm
-RowsRecieved ( connectionId, rowStrs ) ->
+RowsReceived ( connectionId, rowStrs ) ->
 	let
 		l =
-			Debug.log "RowsRecieved" ( connectionId, rowStrs )
+			Debug.log "RowsReceived" ( connectionId, rowStrs )
 	in
 		model ! []
 ```
@@ -288,7 +288,7 @@ __Usage__
 ExecuteComplete ( connectionId, count ) ->
 	let
 		l =
-			Debug.log "RowsRecieved" ( connectionId, count )
+			Debug.log "ExecuteComplete" ( connectionId, count )
 	in
 		model ! []
 ```
