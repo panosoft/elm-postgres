@@ -36,7 +36,7 @@ Connections are maintained by the Effect Manager State and are referenced via `c
 
 ```elm
 connect : ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> String -> Int -> String -> String -> String -> Cmd msg
-connect errorTagger tagger connectionLostTagger host port' database user password
+connect errorTagger tagger connectionLostTagger host port_ database user password
 ```
 __Usage__
 
