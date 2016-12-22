@@ -8,7 +8,7 @@
 
 > The module Proxy.Decoder has the JSON Decoders for handling the messages sent by the native client code. This module is used in PGProxy.
 
-> It is possible to write your own PGProxy, but I'd suggest you first look to PGProxy as a reference implementation. Hopefully, it will fit your needs.
+> It is possible to write your own PGProxy using it as a reference implementation, but I'd suggest you first look to PGProxy. Hopefully, it will fit your needs.
 
 This Effects Manager is built on top of the canonical PG library for node, [node-postgres](https://github.com/brianc/node-postgres).
 
@@ -23,6 +23,173 @@ Since the Elm Package Manager doesn't allow for Native code and this uses Native
 You also need to install the dependent node modules at the root of your Application Directory. See the example `package.json` for a list of the dependencies.
 
 The installation can be done via `npm install` command.
+
+## Server side usage
+
+All of the following API calls can be used on the server side except for `clientSideConfig` which is only useful when using this module on the client side.
+
+## Client side Usage
+
+The `clientSideConfig` must be used to configure this module, which is used to configure this module for communication to a backend proxy, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy).
+
+`clientSideConfig` must be the first call before any other API calls are made.
+
+`PGProxy` can be used as is or as a reference implementation for building your own proxy. Since it's an authenticating proxy, extra authentication information can be automatically added to all calls between this module and `PGProxy` via the `clientSideConfig` call.
+
+Since client side configuration is **global** to the module there may only be one connection to a single proxy server. This should not prove limiting in most scenarios.
+
+The native code of this module relies on the global definition of `process.env.BROWSER` to be `truthy` for this module to work in client mode. This can be done via `webpack` easily by using the plugin `webpack.DefinePlugin` to define the global process variable as showing in this example `webpack.config.json`:
+
+```js
+const webpack = require('/usr/local/lib/node_modules/webpack');
+
+module.exports = {
+    entry: './Client/index.js',
+    output: {
+        path: './build',
+        filename: 'index.js'
+    },
+    plugins: [
+        new webpack.DefinePlugin({
+            "process.env": {
+                BROWSER: JSON.stringify(true)
+            }
+        })
+    ],
+    module: {
+        loaders: [
+            {
+                test: /\.html$/,
+                exclude: /node_modules/,
+                loader: 'html-loader'
+            },
+            {
+                test: /\.elm$/,
+                exclude: [/elm-stuff/],
+                loader: 'elm-webpack'
+            }
+        ]
+    }
+};
+```
+`process.env.BROWSER` must be defined in this way so `webpack` will ignore the `require`s in the server portion of the native code since those libraries won't exist for the client build.
+
+Note that this uses the [Elm Webpack Loader](https://github.com/elm-community/elm-webpack-loader) and [HTML Webpack Loader](https://github.com/webpack/html-loader).
+
+This can be found in the client's `node_modules` under the `devDependencies` key as shown in this example `package.json`:
+
+```json
+{
+  "name": "test-postgres-proxy",
+  "version": "1.0.0",
+  "description": "Client and server for testing client proxy part of the PostGres Effect Manager",
+  "author": "Charles Scalfani",
+  "license": "Unlicense",
+  "dependencies": {
+    "@panosoft/elm-native-helpers": "^0.1.9",
+	"ws": "^1.1.1"
+  },
+  "devDependencies": {
+    "elm-webpack-loader": "^3.0.6",
+    "html-loader": "^0.4.4"
+  }
+}
+```
+
+The client that uses this webpack config is built with this command:
+
+```bash
+webpack --config Client/webpack.config.js --display-error-details
+```
+
+## Proxy protocol
+
+### Marshalling Function Calls
+
+Each API call (except for `clientSideConfig`) will build a JSON object of the following format:
+
+```js
+{
+	"func": "api-function-name",
+	// remaining keys are parameters
+}
+```
+
+For example, the Postgres Effects Manager Command, `query` has the following signature:
+
+```elm
+query : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Sql -> Int -> Cmd msg
+query errorTagger tagger connectionId sql recordCount
+```
+
+The parameters that need to be marshalled to the proxy are `sql` and `recordCount`. Therefore the JSON object that's sent to the proxy has the following format:
+
+```js
+{
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+### Authenticating Proxy Support
+
+To support Authenticating Proxies, `clientSideConfig` supports configuration of authentication information that will be merged with this JSON object. For example, if the following configuration call was made:
+
+```elm
+clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+
+then the previous JSON object would be transformed into:
+
+```js
+{
+	"sessionId": "1f137f5f-43ec-4393-b5e8-bf195015e697",
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+before being sent to the Authenticating Proxy. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it passes the *entire* JSON object to the authenticator. That authenticator is provided by the server that houses the PGProxy service.
+
+### Request/Reposonse Ids
+
+Each request is given a unique id to help correlate client and server side log messages. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it responds with the same id as was in the original request.
+
+So our final request looks like:
+
+```js
+{
+	"sessionId": "1f137f5f-43ec-4393-b5e8-bf195015e697",
+	"requestId": 43,
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+### Proxy Responses
+
+Proxy Responses are JSON and of the format for successful responses:
+
+```js
+{
+	"requestId": "13",
+	"success": true,
+	// the rest of the keys for the Service's response
+}
+```
+
+And for non-successful responses:
+
+```js
+{
+	"requestId": "13",
+	"success": false,
+	"error": "Error message"
+}
+```
 
 ## API
 
