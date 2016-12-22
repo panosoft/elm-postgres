@@ -30,15 +30,17 @@ All of the following API calls can be used on the server side except for `client
 
 ## Client side Usage
 
-The `clientSideConfig` must be used to configure this module, which is used to configure this module for communication to a backend proxy, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy).
+To use this Effects Manager on the client side, a Proxy server, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy), must be used. This server will make the actual calls to the Postgres DB on the server side.
+
+The `clientSideConfig` must be used to configure this module for communication to a backend proxy.
 
 `clientSideConfig` must be the first call before any other API calls are made.
 
-`PGProxy` can be used as is or as a reference implementation for building your own proxy. Since it's an authenticating proxy, extra authentication information can be automatically added to all calls between this module and `PGProxy` via the `clientSideConfig` call.
+`PGProxy` can be used as is or as a reference implementation for building your own proxy. Since it's an authenticating proxy, extra authentication information can be automatically added to all calls between this module and `PGProxy` via the `clientSideConfig` call. This autentication information is implementation specific.
 
 Since client side configuration is **global** to the module there may only be one connection to a single proxy server. This should not prove limiting in most scenarios.
 
-The native code of this module relies on the global definition of `process.env.BROWSER` to be `truthy` for this module to work in client mode. This can be done via `webpack` easily by using the plugin `webpack.DefinePlugin` to define the global process variable as showing in this example `webpack.config.json`:
+The native code of this module relies on the global definition of `process.env.BROWSER` to be `truthy` for this module to work in client mode. This can be done via `webpack` easily by using the plugin `webpack.DefinePlugin` to define the global process variable as shown in this example `webpack.config.json`:
 
 ```js
 const webpack = require('/usr/local/lib/node_modules/webpack');
@@ -122,7 +124,7 @@ query : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Sql -> Int -> Cmd 
 query errorTagger tagger connectionId sql recordCount
 ```
 
-The parameters that need to be marshalled to the proxy are `sql` and `recordCount`. Therefore the JSON object that's sent to the proxy has the following format:
+The parameters that need to be marshalled to the Proxy are `sql` and `recordCount`. Therefore the JSON object that's sent to the Proxy has the following format:
 
 ```js
 {
@@ -134,7 +136,7 @@ The parameters that need to be marshalled to the proxy are `sql` and `recordCoun
 
 ### Authenticating Proxy Support
 
-To support Authenticating Proxies, `clientSideConfig` supports configuration of authentication information that will be merged with this JSON object. For example, if the following configuration call was made:
+To support Authenticating Proxies, `clientSideConfig` takes an additional JSON string parameter that will be merged with the JSON objects that represent function calls. For example, if the following configuration call was made:
 
 ```elm
 clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
@@ -153,7 +155,13 @@ then the previous JSON object would be transformed into:
 
 before being sent to the Authenticating Proxy. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it passes the *entire* JSON object to the authenticator. That authenticator is provided by the server that houses the PGProxy service.
 
-### Request/Reposonse Ids
+If the authenticating credentials, e.g. `sessionId`, were to change during the execution of the client side program, then another call to `clientSideConfig` must be made to set the new credentials, e.g.:
+
+```elm
+clientSideConfig ConfigError Configured BadResponse Nothing (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+
+### Request/Response Ids
 
 Each request is given a unique id to help correlate client and server side log messages. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it responds with the same id as was in the original request.
 
@@ -175,7 +183,6 @@ Proxy Responses are JSON and of the format for successful responses:
 
 ```js
 {
-	"requestId": "13",
 	"success": true,
 	// the rest of the keys for the Service's response
 }
@@ -185,11 +192,12 @@ And for non-successful responses:
 
 ```js
 {
-	"requestId": "13",
 	"success": false,
 	"error": "Error message"
 }
 ```
+
+In the case of `PGProxy`, these responses will also have `requestId` keys that echo the values sent by the request.
 
 ## API
 
