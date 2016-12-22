@@ -1,14 +1,16 @@
 {
-    "version": "2.0.1",
+    "version": "3.0.0",
     "summary": "Postgres Effects Manager for Elm",
     "repository": "https://github.com/panosoft/elm-postgres.git",
     "license": "Unlicense",
     "source-directories": [
-        "src"
+        "src",
+		"Proxy"
     ],
     "native-modules": true,
     "exposed-modules": [
-        "Postgres"
+        "Postgres",
+		"Proxy.Decoder"
     ],
     "dependencies": {
         "panosoft/elm-debugf": "1.0.0 <= v < 2.0.0",

@@ -2,6 +2,14 @@
 
 > Effects Manager for Node-based Elm programs to be able to access Postgres SQL databases.
 
+> This Effects Manager also works on the client side since the native code is environment aware. The native client code will delegate to an Authenticating Proxy Server which is also written in Elm and use this Effects Manager with the server native code.
+
+> It is called [PGProxy](https://github.com/panosoft/elm-pgproxy).
+
+> The module Proxy.Decoder has the JSON Decoders for handling the messages sent by the native client code. This module is used in PGProxy.
+
+> It is possible to write your own PGProxy using it as a reference implementation, but I'd suggest you first look to PGProxy. Hopefully, it will fit your needs.
+
 This Effects Manager is built on top of the canonical PG library for node, [node-postgres](https://github.com/brianc/node-postgres).
 
 ## Install
@@ -16,6 +24,181 @@ You also need to install the dependent node modules at the root of your Applicat
 
 The installation can be done via `npm install` command.
 
+## Server side usage
+
+All of the following API calls can be used on the server side except for `clientSideConfig` which is only useful when using this module on the client side.
+
+## Client side Usage
+
+To use this Effects Manager on the client side, a Proxy server, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy), must be used. This server will make the actual calls to the Postgres DB on the server side.
+
+The `clientSideConfig` must be used to configure this module for communication to a backend proxy.
+
+`clientSideConfig` must be the first call before any other API calls are made.
+
+`PGProxy` can be used as is or as a reference implementation for building your own proxy. Since it's an authenticating proxy, extra authentication information can be automatically added to all calls between this module and `PGProxy` via the `clientSideConfig` call. This autentication information is implementation specific.
+
+Since client side configuration is **global** to the module there may only be one connection to a single proxy server. This should not prove limiting in most scenarios.
+
+The native code of this module relies on the global definition of `process.env.BROWSER` to be `truthy` for this module to work in client mode. This can be done via `webpack` easily by using the plugin `webpack.DefinePlugin` to define the global process variable as shown in this example `webpack.config.json`:
+
+```js
+const webpack = require('/usr/local/lib/node_modules/webpack');
+
+module.exports = {
+    entry: './Client/index.js',
+    output: {
+        path: './build',
+        filename: 'index.js'
+    },
+    plugins: [
+        new webpack.DefinePlugin({
+            "process.env": {
+                BROWSER: JSON.stringify(true)
+            }
+        })
+    ],
+    module: {
+        loaders: [
+            {
+                test: /\.html$/,
+                exclude: /node_modules/,
+                loader: 'html-loader'
+            },
+            {
+                test: /\.elm$/,
+                exclude: [/elm-stuff/],
+                loader: 'elm-webpack'
+            }
+        ]
+    }
+};
+```
+`process.env.BROWSER` must be defined in this way so `webpack` will ignore the `require`s in the server portion of the native code since those libraries won't exist for the client build.
+
+Note that this uses the [Elm Webpack Loader](https://github.com/elm-community/elm-webpack-loader) and [HTML Webpack Loader](https://github.com/webpack/html-loader).
+
+This can be found in the client's `node_modules` under the `devDependencies` key as shown in this example `package.json`:
+
+```json
+{
+  "name": "test-postgres-proxy",
+  "version": "1.0.0",
+  "description": "Client and server for testing client proxy part of the PostGres Effect Manager",
+  "author": "Charles Scalfani",
+  "license": "Unlicense",
+  "dependencies": {
+    "@panosoft/elm-native-helpers": "^0.1.9",
+	"ws": "^1.1.1"
+  },
+  "devDependencies": {
+    "elm-webpack-loader": "^3.0.6",
+    "html-loader": "^0.4.4"
+  }
+}
+```
+
+The client that uses this webpack config is built with this command:
+
+```bash
+webpack --config Client/webpack.config.js --display-error-details
+```
+
+## Proxy protocol
+
+### Marshalling Function Calls
+
+Each API call (except for `clientSideConfig`) will build a JSON object of the following format:
+
+```js
+{
+	"func": "api-function-name",
+	// remaining keys are parameters
+}
+```
+
+For example, the Postgres Effects Manager Command, `query` has the following signature:
+
+```elm
+query : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Sql -> Int -> Cmd msg
+query errorTagger tagger connectionId sql recordCount
+```
+
+The parameters that need to be marshalled to the Proxy are `sql` and `recordCount`. Therefore the JSON object that's sent to the Proxy has the following format:
+
+```js
+{
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+### Authenticating Proxy Support
+
+To support Authenticating Proxies, `clientSideConfig` takes an additional JSON string parameter that will be merged with the JSON objects that represent function calls. For example, if the following configuration call was made:
+
+```elm
+clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+
+then the previous JSON object would be transformed into:
+
+```js
+{
+	"sessionId": "1f137f5f-43ec-4393-b5e8-bf195015e697",
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+before being sent to the Authenticating Proxy. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it passes the *entire* JSON object to the authenticator. That authenticator is provided by the server that houses the PGProxy service.
+
+If the authenticating credentials, e.g. `sessionId`, were to change during the execution of the client side program, then another call to `clientSideConfig` must be made to set the new credentials, e.g.:
+
+```elm
+clientSideConfig ConfigError Configured BadResponse Nothing (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+
+### Request/Response Ids
+
+Each request is given a unique id to help correlate client and server side log messages. In the case of [PGProxy](https://github.com/panosoft/elm-pgproxy), it responds with the same id as was in the original request.
+
+So our final request looks like:
+
+```js
+{
+	"sessionId": "1f137f5f-43ec-4393-b5e8-bf195015e697",
+	"requestId": 43,
+	"func": "query",
+	"sql": "SELECT * FROM tbl",
+	"recordCount": 100
+}
+```
+
+### Proxy Responses
+
+Proxy Responses are JSON and of the format for successful responses:
+
+```js
+{
+	"success": true,
+	// the rest of the keys for the Service's response
+}
+```
+
+And for non-successful responses:
+
+```js
+{
+	"success": false,
+	"error": "Error message"
+}
+```
+
+In the case of `PGProxy`, these responses will also have `requestId` keys that echo the values sent by the request.
+
 ## API
 
 ### Commands
@@ -28,7 +211,7 @@ Connections are maintained by the Effect Manager State and are referenced via `c
 
 ```elm
 connect : ErrorTagger msg -> ConnectTagger msg -> ConnectionLostTagger msg -> String -> Int -> String -> String -> String -> Cmd msg
-connect errorTagger tagger connectionLostTagger host port' database user password
+connect errorTagger tagger connectionLostTagger host port_ database user password
 ```
 __Usage__
 
@@ -46,7 +229,7 @@ connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName pas
 When a connection is no longer needed, it can be disconnected. It will be placed back into the pool unless `discardConnection` is `True`.
 
 ```elm
-disconnect : ErrorTagger msg -> DisconnectTagger msg -> Int -> Bool -> Cmd msg
+disconnect : ErrorTagger msg -> DisconnectTagger msg -> ConnectionId -> Bool -> Cmd msg
 disconnect errorTagger tagger connectionId discardConnection
 ```
 __Usage__
@@ -64,7 +247,7 @@ disconnect ErrorDisconnect SuccessDisconnect 123 False
 This runs any SQL command that returns a SINGLE result set, usually a `SELECT` statement. The result set is a List of JSON-formatted Strings where each object has keys that match the column names.
 
 ```elm
-query : ErrorTagger msg -> QueryTagger msg -> Int -> String -> Int -> Cmd msg
+query : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Sql -> Int -> Cmd msg
 query errorTagger tagger connectionId sql recordCount
 ```
 __Usage__
@@ -83,7 +266,7 @@ query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
 This continues retrieving records from the last `Postgres.query` call. It will retrieve at most the number of records originally specified by the `recordCount` parameter of that call.
 
 ```elm
-moreQueryResults : ErrorTagger msg -> QueryTagger msg -> Int -> Cmd msg
+moreQueryResults : ErrorTagger msg -> QueryTagger msg -> ConnectionId -> Cmd msg
 moreQueryResults errorTagger tagger connectionId
 ```
 __Usage__
@@ -100,18 +283,46 @@ moreQueryResults ErrorQuery SuccessQuery 123
 This will execute a SQL command that returns a COUNT, e.g. INSERT, UPDATE, DELETE, etc.
 
 ```elm
-executeSQL : ErrorTagger msg -> ExecuteTagger msg -> Int -> String -> Cmd msg
-executeSQL errorTagger tagger connectionId sql
+executeSql : ErrorTagger msg -> ExecuteTagger msg -> ConnectionId -> Sql -> Cmd msg
+executeSql errorTagger tagger connectionId sql
 ```
 __Usage__
 
 ```elm
-executeSQL ErrorExecuteSQL SuccessExecuteSQL 123 "DELETE FROM table"
+executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
 ```
-* `ErrorExecuteSQL` and `SuccessExecuteSQL` are your application's messages to handle the different scenarios
+* `ErrorExecuteSql` and `SuccessExecuteSql` are your application's messages to handle the different scenarios
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"DELETE FROM table"` is the SQL Command that returns a ROW COUNT
 
+> Client side configuration
+
+This is an extra step when using this Effects Manager on the client. It must be the FIRST call so that the native client
+code will delegate properly to a proxy server, e.g. [elm-pgproxy](https://github.com/panosoft/elm-pgproxy).
+
+The first time this is called, `url` MUST be provided. Subsequent calls can pass Nothing and the previous URL will be used.
+
+This is useful when making changes ONLY to the JSON object when the authentication credentials change and the proxy server authenticates.
+
+```elm
+clientSideConfig : ConfigErrorTagger msg -> ConfigTagger msg -> BadResponseTagger msg -> Maybe WSUrl -> Maybe JsonString -> Cmd msg
+clientSideConfig errorTagger tagger badResponseTagger url json
+
+```
+__Usage__
+
+```elm
+clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+```
+* `ConfigError`, `Configured` and `BadResponse` are your application's messages to handle the different scenarios
+* `ws:/pg-proxy-server` is the URL to the Websocket for the PG Proxy (all new connections will use this URL)
+* `{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}` is the JSON string of an object to be merged with all requests
+
+Here, in this example, the JSON string to merge is used by the Proxy Server to authenticate the request. The protocol with the proxy doesn't require this. It's implemenation specific.
+
+[PGProxy](https://github.com/panosoft/elm-pgproxy) delegates authentication to the application allowing for flexible authentication.
+
+N.B. connecting to the Database should NOT be done until the `Configured` message has been received. That's because the trasport between the client and the proxy is Websockets.
 
 ### Subscriptions
 
@@ -128,9 +339,9 @@ listen errorTagger listenTagger eventTagger connectionId channel
 __Usage__
 
 ```elm
-listen ErrorListenUnlisten SuccessListenUnlisten 123 "myChannel"
+listen ErrorListenUnlisten SuccessListenUnlisten ListenEvent 123 "myChannel"
 ```
-* `ErrorListenUnlisten` and `SuccessListenUnlisten` are your application's messages to handle the different scenarios
+* `ErrorListenUnlisten`,  `SuccessListenUnlisten` and `ListenEvent` are your application's messages to handle the different scenarios
 	* Messages are sent to the application upon subscribe and unsubscribe (Listen and Unlisten)
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"myChannel"` is the name of the Channel that will publish a STRING payload
@@ -143,7 +354,7 @@ All error messages are of this type.
 
 ```elm
 type alias ErrorTagger msg =
-    ( Int, String ) -> msg
+	( ConnectionId, String ) -> msg
 ```
 
 __Usage__
@@ -163,7 +374,7 @@ Successful connection.
 
 ```elm
 type alias ConnectTagger msg =
-    Int -> msg
+	ConnectionId -> msg
 ```
 
 __Usage__
@@ -183,7 +394,7 @@ Connection has been lost.
 
 ```elm
 type alias ConnectionLostTagger msg =
-    ( Int, String ) -> msg
+	( ConnectionId, String ) -> msg
 ```
 
 __Usage__
@@ -203,7 +414,7 @@ Successful disconnect.
 
 ```elm
 type alias DisconnectTagger msg =
-    Int -> msg
+	ConnectionId -> msg
 ```
 
 __Usage__
@@ -223,16 +434,16 @@ Successful Query and the first `recordCount` records.
 
 ```elm
 type alias QueryTagger msg =
-    ( Int, List String ) -> msg
+	( ConnectionId, List String ) -> msg
 ```
 
 __Usage__
 
 ```elm
-RowsRecieved ( connectionId, rowStrs ) ->
+RowsReceived ( connectionId, rowStrs ) ->
 	let
 		l =
-			Debug.log "RowsRecieved" ( connectionId, rowStrs )
+			Debug.log "RowsReceived" ( connectionId, rowStrs )
 	in
 		model ! []
 ```
@@ -243,7 +454,7 @@ Successful SQL command execution.
 
 ```elm
 type alias ExecuteTagger msg =
-    ( Int, Int ) -> msg
+	( ConnectionId, Int ) -> msg
 ```
 
 __Usage__
@@ -252,7 +463,7 @@ __Usage__
 ExecuteComplete ( connectionId, count ) ->
 	let
 		l =
-			Debug.log "RowsRecieved" ( connectionId, count )
+			Debug.log "ExecuteComplete" ( connectionId, count )
 	in
 		model ! []
 ```
@@ -263,29 +474,63 @@ Successful listen or unlisten.
 
 ```elm
 type alias ListenTagger msg =
-    ( Int, String, String ) -> msg
+	( ConnectionId, ListenChannel, ListenUnlisten ) -> msg
 ```
 
 __Usage__
 
 ```elm
-ListenUnlisten ( connectionId, channel, type' ) ->
+ListenUnlisten ( connectionId, channel, type_ ) ->
 	let
 		l =
-			case type' of
-				"listen" ->
+			case type_ of
+				ListenType ->
 					Debug.log "Listen" ( connectionId, channel )
 
-				"unlisten" ->
+				UnlistenType ->
 					Debug.log "Unlisten" ( connectionId, channel )
 	in
 		model ! []
 ```
 
-## To Do
+#### ListenEventTagger
 
-* Support this Effect Manager on the client side by making the native code environment aware. The native client code will delegate to an Authenticating Proxy Server which will be written in Elm and use this Effects Manager (at least that's the current plan).
+Listen event.
 
+```elm
+type alias ListenEventTagger msg =
+    ( ConnectionId, ListenChannel, String ) -> msg
+```
+
+__Usage__
+
+```elm
+ListenEvent ( connectionId, channel, message ) ->
+	let
+		l =
+			Debug.log "ListenEvent" ( connectionId, channel, message )
+	in
+		model ! []
+```
+#### ConfigTagger
+
+Configured event.
+
+```elm
+type alias ConfigTagger msg =
+    () -> msg
+```
+
+__Usage__
+
+```elm
+Configured () ->
+	let
+		l =
+			Debug.log "Configured" ""
+	in
+		model ! [ Postgres.connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password ]
+```
 
 ## Warning
 
