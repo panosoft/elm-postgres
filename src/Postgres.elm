@@ -229,12 +229,12 @@ type alias State msg =
 
 (&>) : Task x a -> Task x b -> Task x b
 (&>) t1 t2 =
-    t1 `Task.andThen` \_ -> t2
+    t1 |> Task.andThen (\_ -> t2)
 
 
 (&>>) : Task x a -> (a -> Task x b) -> Task x b
 (&>>) t1 f =
-    t1 `Task.andThen` f
+    t1 |> Task.andThen f
 
 
 

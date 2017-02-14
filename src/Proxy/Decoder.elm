@@ -83,23 +83,23 @@ type ProxyRequest
 
 (<||) : JD.Decoder (a -> b) -> JD.Decoder a -> JD.Decoder b
 (<||) =
-    JD.object2 (<|)
+    JD.map2 (<|)
 
 
 requestTypeDecoder : JD.Decoder RequestType
 requestTypeDecoder =
-    "func" := string
+    field "func" string
 
 
 connectDecoder : JD.Decoder ProxyRequest
 connectDecoder =
     JD.succeed Connect
         <|| (JD.succeed ConnectRequest
-                <|| ("host" := string)
-                <|| ("port" := int)
-                <|| ("database" := string)
-                <|| ("user" := string)
-                <|| ("password" := string)
+                <|| (field "host" string)
+                <|| (field "port" int)
+                <|| (field "database" string)
+                <|| (field "user" string)
+                <|| (field "password" string)
             )
 
 
@@ -107,7 +107,7 @@ disconnectDecoder : JD.Decoder ProxyRequest
 disconnectDecoder =
     JD.succeed Disconnect
         <|| (JD.succeed DisconnectRequest
-                <|| ("discardConnection" := bool)
+                <|| (field "discardConnection" bool)
             )
 
 
@@ -115,8 +115,8 @@ queryDecoder : JD.Decoder ProxyRequest
 queryDecoder =
     JD.succeed Query
         <|| (JD.succeed QueryRequest
-                <|| ("sql" := string)
-                <|| ("recordCount" := int)
+                <|| (field "sql" string)
+                <|| (field "recordCount" int)
             )
 
 
@@ -130,7 +130,7 @@ executeSqlDecoder : JD.Decoder ProxyRequest
 executeSqlDecoder =
     JD.succeed ExecuteSql
         <|| (JD.succeed ExecuteSqlRequest
-                <|| ("sql" := string)
+                <|| (field "sql" string)
             )
 
 
@@ -138,7 +138,7 @@ listenDecoder : JD.Decoder ProxyRequest
 listenDecoder =
     JD.succeed Listen
         <|| (JD.succeed ListenRequest
-                <|| ("channel" := string)
+                <|| (field "channel" string)
             )
 
 
@@ -146,7 +146,7 @@ unlistenDecoder : JD.Decoder ProxyRequest
 unlistenDecoder =
     JD.succeed Unlisten
         <|| (JD.succeed UnlistenRequest
-                <|| ("channel" := string)
+                <|| (field "channel" string)
             )
 
 
