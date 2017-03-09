@@ -160,7 +160,7 @@ var native;
 			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 			// Subs
 			const _listen = (dbClient, channel, routeCb, cb) => {
-				_executeSql(dbClient, "LISTEN " + channel, (err, _) => {
+				_executeSql(dbClient, 'LISTEN "' + channel + '\"', (err, _) => {
 					if (err)
                         cb(err);
                     else {
@@ -173,7 +173,7 @@ var native;
 				});
 			};
 			const _unlisten = (dbClient, channel, nativeListener, cb) => {
-				_executeSql(dbClient, "UNLISTEN " + channel, (err, _) => {
+				_executeSql(dbClient, 'UNLISTEN "' + channel + '\"', (err, _) => {
 					if (err)
                         cb(err);
                     else {

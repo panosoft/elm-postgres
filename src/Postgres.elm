@@ -413,19 +413,19 @@ listen errorTagger listenTagger eventTagger connectionId channel =
 
 
 onEffects : Platform.Router msg (Msg msg) -> List (MyCmd msg) -> List (MySub msg) -> State msg -> Task Never (State msg)
-onEffects router cmds newSubs state =
+onEffects router cmds subs state =
     let
-        newSubsDict =
-            List.foldl addMySub Dict.empty newSubs
+        ( listeners, subErrorTasks ) =
+            List.foldl (addMySub router state) ( Dict.empty, [] ) subs
 
-        oldListeners =
-            Dict.diff state.listeners newSubsDict
+        stoppedListening =
+            Dict.diff state.listeners listeners
 
-        newListeners =
-            Dict.diff newSubsDict state.listeners
+        startedListening =
+            Dict.diff listeners state.listeners
 
-        keepListeners =
-            Dict.intersect state.listeners newSubsDict
+        keptListening =
+            Dict.diff state.listeners stoppedListening
 
         handleOneCmd state cmd tasks =
             let
@@ -441,15 +441,16 @@ onEffects router cmds newSubs state =
             Task.sequence (List.reverse tasks)
 
         ( stopTask, stopState ) =
-            stopListeners router oldListeners cmdState
+            stopListeners router stoppedListening cmdState
 
         ( startTask, startState ) =
-            startListeners router newListeners stopState
+            startListeners router startedListening stopState
     in
         cmdTask
             &> stopTask
             &> startTask
-            &> Task.succeed { startState | listeners = Dict.union keepListeners newListeners }
+            &> Task.sequence (List.reverse <| subErrorTasks)
+            &> Task.succeed { startState | listeners = Debug.log "listeners" listeners }
 
 
 startStopListeners : ListenUnlisten -> Platform.Router msg (Msg msg) -> ListenerDict msg -> State msg -> ( Task Never (), State msg )
@@ -511,11 +512,13 @@ startListeners =
     startStopListeners ListenType
 
 
-addMySub : MySub msg -> ListenerDict msg -> ListenerDict msg
-addMySub sub dict =
+addMySub : Platform.Router msg (Msg msg) -> State msg -> MySub msg -> ( ListenerDict msg, List (Task x ()) ) -> ( ListenerDict msg, List (Task x ()) )
+addMySub router state sub ( dict, errorTasks ) =
     case sub of
         Listen errorTagger listenTagger eventTagger connectionId channel ->
-            Dict.insert connectionId (ListenerState channel errorTagger listenTagger eventTagger) dict
+            Dict.get connectionId dict
+                |?> (\_ -> ( dict, Platform.sendToApp router (errorTagger ( connectionId, "Another listener exists" )) :: errorTasks ))
+                ?= ( Dict.insert connectionId (ListenerState channel errorTagger listenTagger eventTagger) dict, errorTasks )
 
 
 updateConnection : State msg -> ConnectionId -> Connection msg -> State msg

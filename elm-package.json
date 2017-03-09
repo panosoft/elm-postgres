@@ -1,5 +1,5 @@
 {
-    "version": "4.0.0",
+    "version": "4.0.1",
     "summary": "Postgres Effects Manager for Elm",
     "repository": "https://github.com/panosoft/elm-postgres.git",
     "license": "Unlicense",
