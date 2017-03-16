@@ -450,7 +450,7 @@ onEffects router cmds subs state =
             &> stopTask
             &> startTask
             &> Task.sequence (List.reverse <| subErrorTasks)
-            &> Task.succeed { startState | listeners = Debug.log "listeners" listeners }
+            &> Task.succeed { startState | listeners = listeners }
 
 
 startStopListeners : ListenUnlisten -> Platform.Router msg (Msg msg) -> ListenerDict msg -> State msg -> ( Task Never (), State msg )
