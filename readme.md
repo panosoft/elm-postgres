@@ -28,9 +28,11 @@ The installation can be done via `npm install` command.
 
 All of the following API calls can be used on the server side except for `clientSideConfig` which is only useful when using this module on the client side.
 
-## Client side Usage
+## Client side Usage (Browser & Electron)
 
 To use this Effects Manager on the client side, a Proxy server, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy), must be used. This server will make the actual calls to the Postgres DB on the server side.
+
+You can determine whether you're running on a client or server by calling `isOnClient`.
 
 The `clientSideConfig` must be used to configure this module for communication to a backend proxy.
 
@@ -104,6 +106,53 @@ The client that uses this webpack config is built with this command:
 webpack --config Client/webpack.config.js --display-error-details
 ```
 
+`process.env.CLIENT` can be set if you're running this Effects Manager from Node and you want to run as a client, e.g. in [Electron](https://github.com/electron/electron). This can easily be set via the command line when launching the Node application:
+
+```bash
+CLIENT=true node main
+```
+
+ or it can be hardcoded in the main.js:
+
+
+```js
+// compile with:
+//		elm make Test/App.elm --output elm.js
+
+// tell Postgres to use PGProxy
+process.env.CLIENT = true;
+
+// load Elm module
+const elm = require('./elm.js');
+
+// get Elm ports
+const ports = elm.App.worker().ports;
+
+// keep our app alive until we get an exitCode from Elm or SIGINT or SIGTERM (see below)
+setInterval(id => id, 86400);
+
+ports.exitApp.subscribe(exitCode => {
+	console.log('Exit code from Elm:', exitCode);
+	process.exit(exitCode);
+});
+
+process.on('uncaughtException', err => {
+	console.log(`Uncaught exception:\n`, err);
+	process.exit(1);
+});
+
+process.on('SIGINT', _ => {
+	console.log(`SIGINT received.`);
+	ports.externalStop.send(null);
+});
+
+process.on('SIGTERM', _ => {
+	console.log(`SIGTERM received.`);
+	ports.externalStop.send(null);
+});
+```
+
+
 ## Proxy protocol
 
 ### Marshalling Function Calls
@@ -160,6 +209,8 @@ If the authenticating credentials, e.g. `sessionId`, were to change during the e
 ```elm
 clientSideConfig ConfigError Configured BadResponse Nothing (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
 ```
+Note that we didn't have to set the websocket address. The use of Nothing here will NOT change the old value.
+
 
 ### Request/Response Ids
 
@@ -201,6 +252,16 @@ In the case of `PGProxy`, these responses will also have `requestId` keys that e
 
 ## API
 
+### Helpers
+
+> Check to see if we're running on the client, i.e. using PGProxy (or something like it)
+
+```elm
+isOnClient : Bool
+isOnClient
+```
+
+
 ### Commands
 
 > Connect to a database
@@ -216,7 +277,7 @@ connect errorTagger tagger connectionLostTagger host port_ database user passwor
 __Usage__
 
 ```elm
-connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password
+Postgres.connect ErrorConnect SuccessConnect ConnectionLost myHost 5432 myDb userName password
 ```
 * `ErrorConnect`, `SuccessConnect` and `ConnectionLost` are your application's messages to handle the different scenarios.
 * `myHost` is the host name of the Postgres server
@@ -235,7 +296,7 @@ disconnect errorTagger tagger connectionId discardConnection
 __Usage__
 
 ```elm
-disconnect ErrorDisconnect SuccessDisconnect 123 False
+Postgres.disconnect ErrorDisconnect SuccessDisconnect 123 False
 ```
 
 * `ErrorDisconnect` and `SuccessDisconnect` are your application's messages to handle the different scenarios
@@ -253,7 +314,7 @@ query errorTagger tagger connectionId sql recordCount
 __Usage__
 
 ```elm
-query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
+Postgres.query ErrorQuery SuccessQuery 123 "SELECT * FROM table" 1000
 ```
 * `ErrorQuery` and `SuccessQuery` are your application's messages to handle the different scenarios
 * `123` is the connection id from the `(ConnectTagger msg)` handler
@@ -272,7 +333,7 @@ moreQueryResults errorTagger tagger connectionId
 __Usage__
 
 ```elm
-moreQueryResults ErrorQuery SuccessQuery 123
+Postgres.moreQueryResults ErrorQuery SuccessQuery 123
 ```
 * `ErrorQuery` and `SuccessQuery` are your application's messages to handle the different scenarios:
 	* When `(snd SuccessQuery) == []` then there are no more records
@@ -289,7 +350,7 @@ executeSql errorTagger tagger connectionId sql
 __Usage__
 
 ```elm
-executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
+Postgres.executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
 ```
 * `ErrorExecuteSql` and `SuccessExecuteSql` are your application's messages to handle the different scenarios
 * `123` is the connection id from the (ConnectTagger msg) handler
@@ -312,7 +373,7 @@ clientSideConfig errorTagger tagger badResponseTagger url json
 __Usage__
 
 ```elm
-clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
+Postgres.clientSideConfig ConfigError Configured BadResponse (Just "ws://pg-proxy-server") (Just "{\"sessionId\": \"1f137f5f-43ec-4393-b5e8-bf195015e697\"}")
 ```
 * `ConfigError`, `Configured` and `BadResponse` are your application's messages to handle the different scenarios
 * `ws:/pg-proxy-server` is the URL to the Websocket for the PG Proxy (all new connections will use this URL)
@@ -323,6 +384,38 @@ Here, in this example, the JSON string to merge is used by the Proxy Server to a
 [PGProxy](https://github.com/panosoft/elm-pgproxy) delegates authentication to the application allowing for flexible authentication.
 
 N.B. connecting to the Database should NOT be done until the `Configured` message has been received. That's because the trasport between the client and the proxy is Websockets.
+
+> Turn on debugging
+
+This will print out debugging information during operations. This should only be used in Development or Test. If this Effects Manager is used on the client-side, then
+internal marshalling is printed out, i.e. Sends and Receives.
+
+```elm
+debug : Bool -> Cmd msg
+debug debug
+```
+
+__Usage__
+
+```elm
+Postgres.debug True
+```
+
+> Dump internal state
+
+This is for debugging purposes to help make sure database connections are leaking.
+
+```elm
+dumpState : Cmd msg
+dumpState
+```
+
+__Usage__
+
+```elm
+Postgres.dumpState
+```
+
 
 ### Subscriptions
 
@@ -339,7 +432,7 @@ listen errorTagger listenTagger eventTagger connectionId channel
 __Usage__
 
 ```elm
-listen ErrorListenUnlisten SuccessListenUnlisten ListenEvent 123 "myChannel"
+Postgres.listen ErrorListenUnlisten SuccessListenUnlisten ListenEvent 123 "myChannel"
 ```
 * `ErrorListenUnlisten`,  `SuccessListenUnlisten` and `ListenEvent` are your application's messages to handle the different scenarios
 	* Messages are sent to the application upon subscribe and unsubscribe (Listen and Unlisten)

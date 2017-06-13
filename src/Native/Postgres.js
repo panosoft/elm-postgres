@@ -31,11 +31,13 @@ var native;
 	// So we must pass elm globals to it (see https://github.com/panosoft/elm-native-helpers for the minimum of E)
 	const helper = require('@panosoft/elm-native-helpers/helper')(E);
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
+	var _debug = false;
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// NODE
+	// Server-side NODE
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
-	if (!process.env.BROWSER) {
+	const notOnClient = !process.env.BROWSER && !process.env.CLIENT;
+	if (!process.env.BROWSER && !process.env.CLIENT) { // code is duplicated here for Webpack to ignore this code block
 		const read = require('stream-read');
 		const pg = require('pg');
 		const QueryStream = require('pg-query-stream');
@@ -199,6 +201,8 @@ var native;
 			const unlisten = helper.call3_0(_unlisten, helper.unwrap({1:'_0', 3:'_0'}));
 
 			return {
+				isOnClient: () => !notonClient,
+				setDebug: debug => _debug = debug,
 				///////////////////////////////////////////
 				// Cmds
 				connect: F8(connect),
@@ -215,7 +219,7 @@ var native;
 	}
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// BROWSER
+	// BROWSER or CLIENT side Node
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////
 	else {
@@ -241,6 +245,7 @@ var native;
 				message = merge(message, {requestId});
 				++requestId;
 				ws.send(JSON.stringify(message));
+				if (_debug) console.log(">>>--- SENT --->", JSON.stringify(message))
 			};
 			const sendBadResponseToApp = (responseOrEventData, error) => {
 				const response = typeof responseOrEventData == 'string' ? responseOrEventData : JSON.stringify(responseOrEventData);
@@ -249,6 +254,7 @@ var native;
 			const isUnsolicitedMessage = response => response.unsolicited;
 			const unsolicitedMessageHandler = ws => response => {
 				try {
+					if (_debug) console.log("<--- RECEIVED ---<<<", response)
 					// check for proxy losing connection to DB
 					if (response.connectionLostError) {
 						E.Scheduler.rawSpawn(ws.__connectionLostCb__(response.connectionLostError));
@@ -273,6 +279,7 @@ var native;
 			const unexpectedResponse = response => sendBadResponseToApp(response, 'Unexpected Response from Proxy');
 			const handleResponse = (response, errorCb, successCb) => {
 				try {
+					if (_debug) console.log("<--- RECEIVED ---<<<", response)
 					response.error ? errorCb(response.error) : successCb(response);
 				}
 				catch (err) {
@@ -317,11 +324,18 @@ var native;
 					// make sure client configuration has been done before sending anything
 					if (!_wsUrl)
 						throw Error('Postgres Effects Manager cannot be used on the front-end without first calling "clientSideConfig"');
-					const ws = new WebSocket(_wsUrl);
+					var ws;
+					if (!process.env.BROWSER) {
+						const WebSocket = require('ws')
+						ws = new WebSocket(_wsUrl);
+					}
+		            else
+		            	ws = new WebSocket(_wsUrl);
 					ws.__open__ = false;
 					ws.__connectionLostCb__ = connectionLostCb;
 					// init message handlers
 					ws.__messageHandlers__ = {};
+					ws.addEventListener('error', error => error); // to avoid unhandled exception
 		            ws.addEventListener('open', _ => {
 						ws.__open__ = true;
 						// send to proxy
@@ -342,7 +356,7 @@ var native;
 								// get type
 								const type = response.type;
 								// get handler
-								const handler = ws.__messageHandlers__[type] || (_ => sendBadResponseToApp(response, 'Unknown or unexpected response type from proxy: ' + type + ' Response: ' + event.data));
+								const handler = ws.__messageHandlers__[type] || (_ => sendBadResponseToApp(response, 'Unknown response type or response for a type that was uninitiated was received from proxy: ' + type + ' Response: ' + event.data));
 								// call handler
 								handler(response);
 								// reset message handler
@@ -500,6 +514,8 @@ var native;
 			const unlisten = helper.call3_1(_unlisten, helper.unwrap({1:'_0'}));
 
 			return {
+				isOnClient: () => !notonClient,
+				setDebug: debug => _debug = debug,
 				///////////////////////////////////////////
 				// Cmds
 				connect: F8(connect),

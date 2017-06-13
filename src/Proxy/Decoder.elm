@@ -2,13 +2,14 @@ module Proxy.Decoder
     exposing
         ( decodeRequest
         , ProxyRequest(..)
+        , ConnectRequest
         )
 
 {-| Postgres Proxy Decoder
 
 This is for decoding the proxy messages between client and server
 
-@docs decodeRequest, ProxyRequest
+@docs decodeRequest, ProxyRequest, ConnectRequest
 
 -}
 
@@ -19,6 +20,8 @@ type alias RequestType =
     String
 
 
+{-| Connect request
+-}
 type alias ConnectRequest =
     { host : String
     , port_ : Int
