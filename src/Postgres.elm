@@ -610,7 +610,7 @@ handleCmd router state cmd =
 
         Query errorTagger tagger connectionId sql recordCount ->
             state.debug
-                ? ( DebugF.log "*** DEBUG:Postgres Query" sql, "" )
+                ?! ( \_ -> DebugF.log "*** DEBUG:Postgres Query" sql, always "" )
                 |> always
                     (Maybe.map
                         (\connection ->
@@ -716,62 +716,63 @@ listenUnlistenToString type_ =
 debugSelfMsg : State msg -> Msg msg -> String
 debugSelfMsg state selfMsg =
     state.debug
-        ? ( (case selfMsg of
-                SuccessConnect connectionId client nativeListener ->
-                    "SuccessConnect" +-+ ( connectionId, "<client>", "<nativeListener>" )
+        ?! ( \_ ->
+                (case selfMsg of
+                    SuccessConnect connectionId client nativeListener ->
+                        "SuccessConnect" +-+ ( connectionId, "<client>", "<nativeListener>" )
 
-                ErrorConnect connectionId err ->
-                    "ErrorConnect" +-+ ( connectionId, err )
+                    ErrorConnect connectionId err ->
+                        "ErrorConnect" +-+ ( connectionId, err )
 
-                ConnectionLost connectionId err ->
-                    "ConnectionLost" +-+ ( connectionId, err )
+                    ConnectionLost connectionId err ->
+                        "ConnectionLost" +-+ ( connectionId, err )
 
-                SuccessDisconnect connectionId ->
-                    "SuccessDisconnect" +-+ connectionId
+                    SuccessDisconnect connectionId ->
+                        "SuccessDisconnect" +-+ connectionId
 
-                ErrorDisconnect connectionId err ->
-                    "ErrorDisconnect" +-+ ( connectionId, err )
+                    ErrorDisconnect connectionId err ->
+                        "ErrorDisconnect" +-+ ( connectionId, err )
 
-                SuccessQuery connectionId stream results ->
-                    "SuccessQuery" +-+ ( connectionId, "<stream>", results )
+                    SuccessQuery connectionId stream results ->
+                        "SuccessQuery" +-+ ( connectionId, "<stream>", results )
 
-                ErrorQuery connectionId sql err ->
-                    "ErrorQuery" +-+ ( connectionId, sql, err )
+                    ErrorQuery connectionId sql err ->
+                        "ErrorQuery" +-+ ( connectionId, sql, err )
 
-                SuccessExecuteSql connectionId result ->
-                    "SuccessExecuteSql" +-+ ( connectionId, result )
+                    SuccessExecuteSql connectionId result ->
+                        "SuccessExecuteSql" +-+ ( connectionId, result )
 
-                ErrorExecuteSql connectionId sql err ->
-                    "ErrorExecuteSql" +-+ ( connectionId, sql, err )
+                    ErrorExecuteSql connectionId sql err ->
+                        "ErrorExecuteSql" +-+ ( connectionId, sql, err )
 
-                SuccessClientSideConfig tagger ->
-                    "SuccessClientSideConfig" +-+ tagger
+                    SuccessClientSideConfig tagger ->
+                        "SuccessClientSideConfig" +-+ tagger
 
-                ErrorClientSideConfig errorTagger err ->
-                    "ErrorClientSideConfig" +-+ ( errorTagger, err )
+                    ErrorClientSideConfig errorTagger err ->
+                        "ErrorClientSideConfig" +-+ ( errorTagger, err )
 
-                SuccessListenUnlisten channel type_ connectionId nativeListener ->
-                    "SuccessListenUnlisten" +-+ ( channel, type_, connectionId, "<nativeListener>" )
+                    SuccessListenUnlisten channel type_ connectionId nativeListener ->
+                        "SuccessListenUnlisten" +-+ ( channel, type_, connectionId, "<nativeListener>" )
 
-                ErrorListenUnlisten errorTagger channel type_ connectionId err ->
-                    "ErrorListenUnlisten" +-+ ( errorTagger, channel, type_, connectionId, err )
+                    ErrorListenUnlisten errorTagger channel type_ connectionId err ->
+                        "ErrorListenUnlisten" +-+ ( errorTagger, channel, type_, connectionId, err )
 
-                InternalSuccessUnlisten disconnectTask channel type_ connectionId nativeListener ->
-                    "InternalSuccessUnlisten" +-+ ( channel, type_, connectionId, "<nativeListener>" )
+                    InternalSuccessUnlisten disconnectTask channel type_ connectionId nativeListener ->
+                        "InternalSuccessUnlisten" +-+ ( channel, type_, connectionId, "<nativeListener>" )
 
-                InternalErrorListenUnlisten errorTagger channel type_ connectionId err ->
-                    "InternalErrorListenUnlisten" +-+ ( errorTagger, channel, type_, connectionId, err )
+                    InternalErrorListenUnlisten errorTagger channel type_ connectionId err ->
+                        "InternalErrorListenUnlisten" +-+ ( errorTagger, channel, type_, connectionId, err )
 
-                ListenEvent connectionId channel message ->
-                    "ListenEvent" +-+ ( connectionId, channel, message )
+                    ListenEvent connectionId channel message ->
+                        "ListenEvent" +-+ ( connectionId, channel, message )
 
-                InternalDumpState ->
-                    "InternalDumpState " ++ (DebugF.toStringF <| printableState state)
-            )
-                |> cleanElmString
-                |> DebugF.log "*** DEBUG:Postgres selfMsg"
-          , ""
-          )
+                    InternalDumpState ->
+                        "InternalDumpState " ++ (DebugF.toStringF <| printableState state)
+                )
+                    |> cleanElmString
+                    |> DebugF.log "*** DEBUG:Postgres selfMsg"
+           , always ""
+           )
 
 
 type Msg msg
