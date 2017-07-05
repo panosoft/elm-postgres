@@ -6,11 +6,14 @@ effect module Postgres
         , query
         , moreQueryResults
         , executeSql
+        , serverSideConfig
         , clientSideConfig
         , listen
         , isOnClient
         , debug
         , dumpState
+        , ErrorTagger
+        , QueryTagger
         , ConnectionId
         , ListenChannel
         , Sql
@@ -26,13 +29,13 @@ The native driver is https://github.com/brianc/node-postgres.
 @docs isOnClient
 
 # Commands
-@docs connect, disconnect, query, moreQueryResults, executeSql, clientSideConfig, debug, dumpState
+@docs connect, disconnect, query, moreQueryResults, executeSql, serverSideConfig, clientSideConfig, debug, dumpState
 
 # Subscriptions
 @docs listen
 
 # Types
-@docs ConnectionId, ListenChannel, Sql, WSUrl, ListenUnlisten
+@docs ErrorTagger, QueryTagger, ConnectionId, ListenChannel, Sql, WSUrl, ListenUnlisten
 -}
 
 import Task exposing (Task)
@@ -63,6 +66,7 @@ type MyCmd msg
     | Query (ErrorTagger msg) (QueryTagger msg) ConnectionId Sql Int
     | MoreQueryResults (ErrorTagger msg) (QueryTagger msg) ConnectionId
     | ExecuteSql (ErrorTagger msg) (ExecuteTagger msg) ConnectionId Sql
+    | ServerSideConfig (ConfigErrorTagger msg) (ConfigTagger msg) Int
     | ClientSideConfig (ConfigErrorTagger msg) (ConfigTagger msg) (BadResponseTagger msg) (Maybe WSUrl) (Maybe JsonString)
     | Debug Bool
     | DumpState
@@ -139,6 +143,8 @@ type alias JsonString =
 -- Taggers
 
 
+{-| Error tagger
+-}
 type alias ErrorTagger msg =
     ( ConnectionId, String ) -> msg
 
@@ -155,6 +161,8 @@ type alias DisconnectTagger msg =
     ConnectionId -> msg
 
 
+{-| Successful Query tagger
+-}
 type alias QueryTagger msg =
     ( ConnectionId, List String ) -> msg
 
@@ -268,6 +276,9 @@ cmdMap f cmd =
         ExecuteSql errorTagger tagger connectionId sql ->
             ExecuteSql (f << errorTagger) (f << tagger) connectionId sql
 
+        ServerSideConfig errorTagger tagger maxPoolConnections ->
+            ServerSideConfig (f << errorTagger) (f << tagger) maxPoolConnections
+
         ClientSideConfig errorTagger tagger badResponseTagger wsUrl json ->
             ClientSideConfig (f << errorTagger) (f << tagger) (f << badResponseTagger) wsUrl json
 
@@ -354,6 +365,22 @@ moreQueryResults errorTagger tagger connectionId =
 executeSql : ErrorTagger msg -> ExecuteTagger msg -> ConnectionId -> Sql -> Cmd msg
 executeSql errorTagger tagger connectionId sql =
     command (ExecuteSql errorTagger tagger connectionId sql)
+
+
+{-| Server side configuration
+
+    Max pool size should be set before any connections are made to a unique connection, i.e. [host, port, database, user] each of which has its own pool.
+
+    Usage:
+        serverSideConfig ConfigError Configured 200
+
+    where:
+        ConfigError, Configured and BadResponse are your application's messages to handle the different scenarios
+        200 is the maximum number of pooled connections in a single pool
+-}
+serverSideConfig : ConfigErrorTagger msg -> ConfigTagger msg -> Int -> Cmd msg
+serverSideConfig errorTagger tagger maxPoolConnections =
+    command (ServerSideConfig errorTagger tagger maxPoolConnections)
 
 
 {-| Client side configuration
@@ -610,7 +637,7 @@ handleCmd router state cmd =
 
         Query errorTagger tagger connectionId sql recordCount ->
             state.debug
-                ?! ( \_ -> DebugF.log "*** DEBUG:Postgres Query" sql, always "" )
+                ?! ( \_ -> DebugF.log ("*** DEBUG:Postgres Query: ConnectionId:" +-+ connectionId) sql, always "" )
                 |> always
                     (Maybe.map
                         (\connection ->
@@ -648,6 +675,11 @@ handleCmd router state cmd =
                 )
                 (Dict.get connectionId state.connections)
                 ?= ( invalidConnectionId router errorTagger connectionId, state )
+
+        ServerSideConfig errorTagger tagger maxPoolConnects ->
+            ( Native.Postgres.serverSideConfig (settings0 router (ErrorServerSideConfig errorTagger) (SuccessServerSideConfig tagger)) maxPoolConnects
+            , state
+            )
 
         ClientSideConfig errorTagger tagger badResponseTagger wsUrl json ->
             ( Native.Postgres.clientSideConfig (settings0 router (ErrorClientSideConfig errorTagger) (SuccessClientSideConfig tagger)) router badResponseTagger wsUrl json
@@ -745,6 +777,12 @@ debugSelfMsg state selfMsg =
                     ErrorExecuteSql connectionId sql err ->
                         "ErrorExecuteSql" +-+ ( connectionId, sql, err )
 
+                    SuccessServerSideConfig tagger ->
+                        "SuccessServerSideConfig" +-+ tagger
+
+                    ErrorServerSideConfig errorTagger err ->
+                        "ErrorServerSideConfig" +-+ ( errorTagger, err )
+
                     SuccessClientSideConfig tagger ->
                         "SuccessClientSideConfig" +-+ tagger
 
@@ -785,6 +823,8 @@ type Msg msg
     | ErrorQuery ConnectionId Sql String
     | SuccessExecuteSql ConnectionId Int
     | ErrorExecuteSql ConnectionId Sql String
+    | SuccessServerSideConfig (ConfigTagger msg)
+    | ErrorServerSideConfig (ConfigErrorTagger msg) String
     | SuccessClientSideConfig (ConfigTagger msg)
     | ErrorClientSideConfig (ConfigErrorTagger msg) String
     | SuccessListenUnlisten ListenChannel ListenUnlisten ConnectionId NativeListener
@@ -886,6 +926,14 @@ onSelfMsg router selfMsg state =
 
                     ErrorExecuteSql connectionId sql err ->
                         sqlError connectionId sql err
+
+                    SuccessServerSideConfig tagger ->
+                        Platform.sendToApp router (tagger ())
+                            &> Task.succeed state
+
+                    ErrorServerSideConfig errorTagger err ->
+                        Platform.sendToApp router (errorTagger err)
+                            &> Task.succeed state
 
                     SuccessClientSideConfig tagger ->
                         Platform.sendToApp router (tagger ())

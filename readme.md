@@ -24,11 +24,13 @@ You also need to install the dependent node modules at the root of your Applicat
 
 The installation can be done via `npm install` command.
 
-## Server side usage
+## Server-side Usage
 
 All of the following API calls can be used on the server side except for `clientSideConfig` which is only useful when using this module on the client side.
 
-## Client side Usage (Browser & Electron)
+The `serverSideConfig` function is can be used to configure the server side usage of the Effects Manager.
+
+## Client-side Usage (Browser & Electron)
 
 To use this Effects Manager on the client side, a Proxy server, e.g. [PGProxy](https://github.com/panosoft/elm-pgproxy), must be used. This server will make the actual calls to the Postgres DB on the server side.
 
@@ -355,6 +357,31 @@ Postgres.executeSql ErrorExecuteSql SuccessExecuteSql 123 "DELETE FROM table"
 * `ErrorExecuteSql` and `SuccessExecuteSql` are your application's messages to handle the different scenarios
 * `123` is the connection id from the (ConnectTagger msg) handler
 * `"DELETE FROM table"` is the SQL Command that returns a ROW COUNT
+
+> Server side configuration
+
+This is an optional step BEFORE connecting to any databases to set the maximum number of connections in the Connection Pool.
+
+A unique pool is created for the unique combination of `host`, `port`, `database` and `user`.
+
+Each pool will be created with the current value of `maxPoolConnections`. The default is `100` if this function is never called.
+
+The first time a connection is made to a database for a specific user, a pool will be created for connections using the ***current*** value of `maxPoolConnections`.
+
+N.B. once the pool has lent out `maxPoolConnections`, then the next connection will wait and potentially timeout if a connection is not
+freed before the connection timeout expires.
+
+```elm
+serverSideConfig : ConfigErrorTagger msg -> ConfigTagger msg -> Int -> Cmd msg
+serverSideConfig errorTagger tagger maxPoolConnections
+
+```
+__Usage__
+
+```elm
+Postgres.serverSideConfig ConfigError Configured 200
+```
+* `ConfigError` and `Configured` are your application's messages to handle the different scenarios
 
 > Client side configuration
 

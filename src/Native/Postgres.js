@@ -42,11 +42,14 @@ var native;
 		const pg = require('pg');
 		const QueryStream = require('pg-query-stream');
 
+		// max pool connections in pool (N.B. new connections will wait after this is exhausted and potentially timeout) default: 100
+		var _maxPoolConnections = 100;
+		// pools indexed on JSON.stringify of connection config
+		const pools = {};
+
 		// HACK to keep pool from throwing uncatchable exeception on connection errors
 		// god I hate the pg library
 		pg.on('error', err => err);
-
-		const createConnectionUrl = (host, port, database, user, password) => `postgres://${user}:${password}@${host}:${port}/${database}`;
 		native = _ => {
 			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 			// Cmds
@@ -71,12 +74,28 @@ var native;
 				}
 			};
 			const _connect = (timeout, host, port, database, user, password, connectionLostCb, cb) => {
+				const sanitizeError = errorMsg => {
+					return _debug ? errorMsg : errorMsg
+					.replace(new RegExp(host, 'g'), '<host>')
+					.replace(new RegExp(String(port), 'g'), '<port>')
+					.replace(new RegExp(database, 'g'), '<database>')
+					.replace(new RegExp(user, 'g'), '<user>')
+					.replace(new RegExp(password, 'g'), '<password>')
+				};
 				var expired = false;
 				const timer = setTimeout(_ => {
 					expired = true;
-					cb(`Connection timeout after ${timeout/1000} seconds to ${host}:${port}/${database}`);
+					cb(sanitizeError(`Connection timeout after ${timeout/1000} seconds to ${host}:${port}/${database}`));
 				}, timeout);
-				pg.connect(createConnectionUrl(host, port, database, user, password), (err, client, done) => {
+				const config = {host, port, database, user, password, _maxPoolConnections};
+				var pool;
+				const poolId = JSON.stringify({host, port, database, user});
+				if (!(pool = pools[poolId])) {
+					if (_debug) console.log('Creating new Pool:', poolId);
+					pool = pools[poolId] = new pg.Pool(config);
+					pool.on('err', err => err);
+				}
+				pool.connect((err, client, done) => {
 					try {
 						if (expired) {
 							if (!err) {
@@ -87,14 +106,14 @@ var native;
 						else {
 							clearTimeout(timer);
 							if (err)
-								cb(`Attempt to retrieve pooled connection for ${host}:${port}/${database}.  Failed with: ${err.message}`);
+								cb(sanitizeError(`Attempt to retrieve pooled connection for ${host}:${port}/${database}.  Failed with: ${err.message}`));
 							else {
 								const dbClient = {client: client, releaseClient: done};
 								const nativeListener = err => {
 									try {
 										if (err instanceof Error) {
 											_disconnectInternal(dbClient, true, nativeListener);
-											E.Scheduler.rawSpawn(connectionLostCb(err.message));
+											E.Scheduler.rawSpawn(connectionLostCb(sanitizeError(err.message)));
 										}
 									}
 									catch (err) {
@@ -108,7 +127,7 @@ var native;
 						}
 					}
 					catch(err) {
-						cb(err.message);
+						cb(sanitizeError(err.message));
 					}
 				});
 			};
@@ -159,6 +178,15 @@ var native;
 					cb(err.message);
 				}
 			};
+			const _serverSideConfig = (maxPoolConnects, cb) => {
+				try {
+					_maxPoolConnections = maxPoolConnects;
+					cb();
+				}
+				catch (err) {
+					cb(err.message);
+				}
+			};
 			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 			// Subs
 			const _listen = (dbClient, channel, routeCb, cb) => {
@@ -195,6 +223,7 @@ var native;
 			const query = helper.call4_2(_query, helper.unwrap({1:'_0', 4:'_0'}));
 			const moreQueryResults = helper.call3_2(_moreQueryResults, helper.unwrap({1:'_0'}));
 			const executeSql = helper.call2_1(_executeSql, helper.unwrap({1:'_0'}));
+			const serverSideConfig = helper.call1_0(_serverSideConfig);
 			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 			// Subs
 			const listen = helper.call3_1(_listen, helper.unwrap({1:'_0'}));
@@ -210,6 +239,7 @@ var native;
 				query: F5(query),
 				moreQueryResults: F4(moreQueryResults),
 				executeSql: F3(executeSql),
+				serverSideConfig: F2(serverSideConfig),
 				///////////////////////////////////////////
 				// Subs
 				listen: F4(listen),
@@ -245,7 +275,7 @@ var native;
 				message = merge(message, {requestId});
 				++requestId;
 				ws.send(JSON.stringify(message));
-				if (_debug) console.log(">>>--- SENT --->", JSON.stringify(message))
+				if (_debug) console.log(">>>--- SENT --->", message)
 			};
 			const sendBadResponseToApp = (responseOrEventData, error) => {
 				const response = typeof responseOrEventData == 'string' ? responseOrEventData : JSON.stringify(responseOrEventData);
@@ -348,7 +378,14 @@ var native;
 		            ws.addEventListener('message', event => {
 						try {
 							// get response
-							const response = JSON.parse(event.data);
+							var response;
+							try {
+								response = JSON.parse(event.data);
+							}
+							catch (err) {
+								if (_debug) console.log ('Bad JSON recieved:', event.data);
+								throw err;
+							}
 							// check for unsolicited message
 							if (isUnsolicitedMessage(response))
 								unsolicitedMessageHandler(ws)(response);
