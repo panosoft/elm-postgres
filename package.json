@@ -1,6 +1,6 @@
 {
   "name": "@panosoft/elm-postgres",
-  "version": "4.2.1",
+  "version": "4.2.0",
   "description": "dependencies for elm-postgres or any package/app that uses it",
   "dependencies": {
     "@panosoft/elm-native-helpers": "^0.1.9",
