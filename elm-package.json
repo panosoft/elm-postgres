@@ -7,16 +7,16 @@
         "src",
         "Proxy"
     ],
-    "native-modules": true,
     "exposed-modules": [
         "Postgres",
         "Proxy.Decoder"
     ],
+    "native-modules": true,
     "dependencies": {
+        "elm-lang/core": "5.0.0 <= v < 6.0.0",
         "panosoft/elm-debugf": "2.0.0 <= v < 3.0.0",
         "panosoft/elm-string-utils": "2.0.0 <= v < 3.0.0",
-        "panosoft/elm-utils": "2.0.0 <= v < 3.0.0",
-        "elm-lang/core": "5.0.0 <= v < 6.0.0"
+        "panosoft/elm-utils": "2.0.0 <= v < 3.0.0"
     },
     "elm-version": "0.18.0 <= v < 0.19.0"
 }
