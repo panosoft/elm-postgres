@@ -14,15 +14,11 @@ This Effects Manager is built on top of the canonical PG library for node, [node
 
 ## Install
 
-### Elm
+You'll need [Grove](https://github.com/panosoft/elm-grove.git).
 
-Since the Elm Package Manager doesn't allow for Native code and this uses Native code, you have to install it directly from GitHub, e.g. via [elm-github-install](https://github.com/gdotdesign/elm-github-install) or some equivalent mechanism.
-
-### Node modules
-
-You also need to install the dependent node modules at the root of your Application Directory. See the example `package.json` for a list of the dependencies.
-
-The installation can be done via `npm install` command.
+```
+grove install panosoft/elm-postgres
+```
 
 ## Server-side Usage
 
